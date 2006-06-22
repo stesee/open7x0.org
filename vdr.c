@@ -985,7 +985,7 @@ int main(int argc, char *argv[])
           //case kVolUp:
           //case kVolDn|k_Repeat:
           //case kVolDn:
-          // m7x0 audio control while playback
+          // m7x0 volume control via left/right
 	  case kLeft|k_Repeat:
 	  case kLeft:
 	  case kRight|k_Repeat:
@@ -1149,14 +1149,18 @@ int main(int argc, char *argv[])
                   }
              // Direct Channel Select:
              case k1 ... k9:
-//M7X0 BEGIN AK	 
-// Support Volume Change via Left/Right added
-//M7X0TODO: Make this working in replaying mode as well
              // Previous/Next rotates through channel groups:
              case kPrev|k_Repeat:
              case kPrev:
              case kNext|k_Repeat:
              case kNext:
+             // Left/Right rotates through channel groups:
+             // m7x0 note: rotation works. 
+             // press "OK" and then "left/right"
+             //case kLeft|k_Repeat:
+             //case kLeft:
+             //case kRight|k_Repeat:
+             //case kRight:
              // Up/Down Channel Select:
              case kUp|k_Repeat:
              case kUp:
@@ -1164,15 +1168,6 @@ int main(int argc, char *argv[])
              case kDown:
                   Menu = new cDisplayChannel(NORMALKEY(key));
                   break;
-				case kLeft|k_Repeat:
-				case kLeft:
-				case kRight|k_Repeat:
-				case kRight:
-						Menu = cDisplayVolume::Create();
-						cDisplayVolume::Process(key);
-						key = kNone; // nobody else needs to see these keys
-						break;
-//M7X0 END AK	
              // Viewing Control:
              case kOk:   LastChannel = -1; break; // forces channel display
              // Instant resume of the last viewed recording:

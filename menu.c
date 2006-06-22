@@ -3345,14 +3345,14 @@ eOSState cDisplayVolume::ProcessKey(eKeys Key)
 //M7X0 BEGIN AK	 
 // Support Volume Change via Left/Right added
 //M7X0TODO: Make this working in replaying mode as well
-		case kLeft|k_Repeat:
-		case kLeft:
-		case kRight|k_Repeat:
-		case kRight:
-			cDevice::PrimaryDevice()->SetVolume(NORMALKEY(Key) == kLeft ? -VOLUMEDELTA : VOLUMEDELTA);
-			Show();
-			timeout.Set(VOLUMETIMEOUT);
-			break;
+    case kLeft|k_Repeat:
+    case kLeft:
+    case kRight|k_Repeat:
+    case kRight:
+	 cDevice::PrimaryDevice()->SetVolume(NORMALKEY(Key) == kLeft ? -VOLUMEDELTA : VOLUMEDELTA);
+	 Show();
+	 timeout.Set(VOLUMETIMEOUT);
+	 break;
 //M7X0 END AK
     case kVolUp|k_Repeat:
     case kVolUp:
