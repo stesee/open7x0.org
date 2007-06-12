@@ -3883,12 +3883,11 @@ void cDvbDevice::SetVideoFormat(eVideoFormat VideoFormat)
  *
  * aspect auto format added
  */
-   int avs = open("/dev/avswitch", O_WRONLY);
-   if(avs== -1) {
-      esyslog("m7x0 can not open /dev/avswitch");
-   }
-
    if (HasDecoder()) {
+    int avs = open("/dev/avswitch", O_WRONLY);
+    if(avs== -1) 
+        esyslog("m7x0 can not open /dev/avswitch");
+	
       switch(VideoFormat) {
 	    case vf16_9:
         	dsyslog("DEBUG: set 16/9");
@@ -3905,10 +3904,10 @@ void cDvbDevice::SetVideoFormat(eVideoFormat VideoFormat)
 		CheckStreamAspect();
 		break;
       }
+      close(avs);
       SetVideoDisplayFormat(eVideoDisplayFormat(Setup.VideoDisplayFormat));
    }
-
-   close(avs);
+   
     int debugget;
     CHECK(ioctl(fd_video_v4l, M7X0_GET_TV_ASPECT_RATIO, &debugget));
     dsyslog("DEBUG: current display format (3=16_9) -> %i", debugget);
