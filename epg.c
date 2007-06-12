@@ -7,7 +7,7 @@
  * Original version (as used in VDR before 1.3.0) written by
  * Robert Schneider <Robert.Schneider@web.de> and Rolf Hakenes <hakenes@hippomi.de>.
  *
- * $Id: epg.c 1.75 2006/05/25 14:55:36 kls Exp $
+ * $Id$
  */
 
 #include "epg.h"
@@ -87,7 +87,8 @@ void cComponents::SetComponent(int Index, uchar Stream, uchar Type, const char *
 tComponent *cComponents::GetComponent(int Index, uchar Stream, uchar Type)
 {
   for (int i = 0; i < numComponents; i++) {
-      if (components[i].stream == Stream && components[i].type == Type) {
+      // In case of an audio stream the 'type' check actually just distinguishes between "normal" and "Dolby Digital":
+      if (components[i].stream == Stream && (Stream != 2 || (components[i].type < 5) == (Type < 5))) {
          if (!Index--)
             return &components[i];
          }
@@ -435,18 +436,6 @@ void ReportEpgBugFixStats(bool Reset)
 
 void cEvent::FixEpgBugs(void)
 {
-  // VDR can't usefully handle newline characters in the title and shortText of EPG
-  // data, so let's always convert them to blanks (independent of the setting of EPGBugfixLevel):
-  strreplace(title, '\n', ' ');
-  strreplace(shortText, '\n', ' ');
-  // Same for control characters:
-  strreplace(title, '\x86', ' ');
-  strreplace(title, '\x87', ' ');
-  strreplace(shortText, '\x86', ' ');
-  strreplace(shortText, '\x87', ' ');
-  strreplace(description, '\x86', ' ');
-  strreplace(description, '\x87', ' ');
-
   if (isempty(title)) {
      // we don't want any "(null)" titles
      title = strcpyrealloc(title, tr("No title"));
@@ -454,7 +443,7 @@ void cEvent::FixEpgBugs(void)
      }
 
   if (Setup.EPGBugfixLevel == 0)
-     return;
+     goto Final;
 
   // Some TV stations apparently have their own idea about how to fill in the
   // EPG data. Let's fix their bugs as good as we can:
@@ -528,7 +517,7 @@ void cEvent::FixEpgBugs(void)
      }
 
   if (Setup.EPGBugfixLevel <= 1)
-     return;
+     goto Final;
 
   // Some channels apparently try to do some formatting in the texts,
   // which is a bad idea because they have no way of knowing the width
@@ -574,7 +563,7 @@ void cEvent::FixEpgBugs(void)
   strreplace(description, '`', '\'');
 
   if (Setup.EPGBugfixLevel <= 2)
-     return;
+     goto Final;
 
   // The stream components have a "description" field which some channels
   // apparently have no idea of how to set correctly:
@@ -638,6 +627,20 @@ void cEvent::FixEpgBugs(void)
            }
          }
      }
+
+Final:
+
+  // VDR can't usefully handle newline characters in the title and shortText of EPG
+  // data, so let's always convert them to blanks (independent of the setting of EPGBugfixLevel):
+  strreplace(title, '\n', ' ');
+  strreplace(shortText, '\n', ' ');
+  // Same for control characters:
+  strreplace(title, '\x86', ' ');
+  strreplace(title, '\x87', ' ');
+  strreplace(shortText, '\x86', ' ');
+  strreplace(shortText, '\x87', ' ');
+  strreplace(description, '\x86', ' ');
+  strreplace(description, '\x87', ' ');
 }
 
 // --- cSchedule -------------------------------------------------------------
@@ -645,7 +648,7 @@ void cEvent::FixEpgBugs(void)
 cSchedule::cSchedule(tChannelID ChannelID)
 {
   channelID = ChannelID;
-  hasRunning = false;;
+  hasRunning = false;
   modified = 0;
   presentSeen = 0;
 }
@@ -661,6 +664,8 @@ cEvent *cSchedule::AddEvent(cEvent *Event)
 void cSchedule::DelEvent(cEvent *Event)
 {
   if (Event->schedule == this) {
+     if (hasRunning && Event->IsRunning())
+        ClrRunningStatus();
      UnhashEvent(Event);
      events.Del(Event);
      }
@@ -736,16 +741,19 @@ const cEvent *cSchedule::GetEventAround(time_t Time) const
 
 void cSchedule::SetRunningStatus(cEvent *Event, int RunningStatus, cChannel *Channel)
 {
+  hasRunning = false;
   for (cEvent *p = events.First(); p; p = events.Next(p)) {
       if (p == Event) {
-         if (p->RunningStatus() > SI::RunningStatusNotRunning || RunningStatus > SI::RunningStatusNotRunning)
+         if (p->RunningStatus() > SI::RunningStatusNotRunning || RunningStatus > SI::RunningStatusNotRunning) {
             p->SetRunningStatus(RunningStatus, Channel);
+            break;
+            }
          }
       else if (RunningStatus >= SI::RunningStatusPausing && p->StartTime() < Event->StartTime())
          p->SetRunningStatus(SI::RunningStatusNotRunning);
+      if (p->RunningStatus() >= SI::RunningStatusPausing)
+         hasRunning = true;
       }
-  if (RunningStatus >= SI::RunningStatusPausing)
-     hasRunning = true;
 }
 
 void cSchedule::ClrRunningStatus(cChannel *Channel)
@@ -770,6 +778,14 @@ void cSchedule::ResetVersions(void)
 void cSchedule::Sort(void)
 {
   events.Sort();
+  // Make sure there are no RunningStatusUndefined before the currently running event:
+  if (hasRunning) {
+     for (cEvent *p = events.First(); p; p = events.Next(p)) {
+         if (p->RunningStatus() >= SI::RunningStatusPausing)
+            break;
+         p->SetRunningStatus(SI::RunningStatusNotRunning);
+         }
+     }
 }
 
 void cSchedule::DropOutdated(time_t SegmentStart, time_t SegmentEnd, uchar TableID, uchar Version)
@@ -785,6 +801,8 @@ void cSchedule::DropOutdated(time_t SegmentStart, time_t SegmentEnd, uchar Table
                   // We can't delete the event right here because a timer might have
                   // a pointer to it, so let's set its id and start time to 0 to have it
                   // "phased out":
+                  if (hasRunning && p->IsRunning())
+                     ClrRunningStatus();
                   UnhashEvent(p);
                   p->eventID = 0;
                   p->startTime = 0;
@@ -911,7 +929,10 @@ const cSchedules *cSchedules::Schedules(cSchedulesLock &SchedulesLock)
 
 void cSchedules::SetEpgDataFileName(const char *FileName)
 {
-  delete epgDataFileName;
+  //delete epgDataFileName;
+//M7X0 AK BEGIN
+  free((void *)epgDataFileName);
+//M7X0 END BEGIN
   epgDataFileName = FileName ? strdup(FileName) : NULL;
 }
 
@@ -1025,6 +1046,9 @@ cSchedule *cSchedules::AddSchedule(tChannelID ChannelID)
   if (!p) {
      p = new cSchedule(ChannelID);
      Add(p);
+     cChannel *channel = Channels.GetByChannelID(ChannelID);
+     if (channel)
+        channel->schedule = p;
      }
   return p;
 }

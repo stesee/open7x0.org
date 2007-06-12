@@ -4,7 +4,7 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: recording.h 1.54 2006/04/09 13:47:11 kls Exp $
+ * $Id$
  */
 
 #ifndef __RECORDING_H
@@ -17,6 +17,13 @@
 #include "thread.h"
 #include "timers.h"
 #include "tools.h"
+//M7X0 BEGIN AK
+#include "ringbuffer.h"
+#include <endian.h>
+#if __BYTE_ORDER == __BIG_ENDIAN
+#include <byteswap.h>
+#endif
+//M7X0 BEGIN AK
 
 extern bool VfatFileSystem;
 
@@ -50,7 +57,7 @@ private:
   void SetAux(const char *Aux);
 public:
   ~cRecordingInfo();
-  tChannelID ChannelID(void) { return channelID; }
+  tChannelID ChannelID(void) const { return channelID; }
   const char *Title(void) const { return event->Title(); }
   const char *ShortText(void) const { return event->ShortText(); }
   const char *Description(void) const { return event->Description(); }
@@ -133,7 +140,7 @@ public:
   bool StateChanged(int &State);
   void ResetResume(const char *ResumeFileName = NULL);
   cRecording *GetByName(const char *FileName);
-  void AddByName(const char *FileName);
+  void AddByName(const char *FileName, bool TriggerUpdate = true);
   void DelByName(const char *FileName);
   int TotalFileSizeMB(void); ///< Only for deleted recordings!
   };
@@ -204,6 +211,10 @@ public:
   ~cIndexFile();
   bool Ok(void) { return index != NULL; }
   bool Write(uchar PictureType, uchar FileNumber, int FileOffset);
+//M7X0 BEGIN AK
+  bool Write(sPesResult *Picture, int PictureCount , uchar FileNumber, int FileOffset);
+  int StripOffLast(void);
+//M7X0 END AK
   bool Get(int Index, uchar *FileNumber, int *FileOffset, uchar *PictureType = NULL, int *Length = NULL);
   int GetNextIFrame(int Index, bool Forward, uchar *FileNumber = NULL, int *FileOffset = NULL, int *Length = NULL, bool StayOffEnd = false);
   int Get(uchar FileNumber, int FileOffset);
@@ -220,13 +231,21 @@ private:
   char *fileName, *pFileNumber;
   bool record;
   bool blocking;
+#ifdef USE_DIRECT_IO
+  bool direct;
+#endif
 public:
+#ifdef USE_DIRECT_IO
+  cFileName(const char *FileName, bool Record, bool Blocking = false, bool Direct = false);
+#else
   cFileName(const char *FileName, bool Record, bool Blocking = false);
+#endif
   ~cFileName();
   const char *Name(void) { return fileName; }
   int Number(void) { return fileNumber; }
   cUnbufferedFile *Open(void);
   void Close(void);
+  int Unlink(void);
   cUnbufferedFile *SetOffset(int Number, int Offset = 0);
   cUnbufferedFile *NextFile(void);
   };

@@ -6,12 +6,16 @@
  *   the Free Software Foundation; either version 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
- *   $Id: descriptor.c 1.21 2006/05/28 14:25:30 kls Exp $
+ *   $Id$
  *                                                                         *
  ***************************************************************************/
 
 #include <string.h>
 #include "descriptor.h"
+
+//M7X0 BEGIN AK
+#include <endian.h>
+//M7X0 END AK
 
 namespace SI {
 
@@ -768,6 +772,7 @@ void PDCDescriptor::Parse() {
    int offset=0;
    data.setPointerAndOffset<const descr_pdc>(s, offset);
 }
+
 
 int PDCDescriptor::getDay() const {
    return ((s->pil0 & 0x0F) << 1) | ((s->pil1 & 0x80) >> 7);

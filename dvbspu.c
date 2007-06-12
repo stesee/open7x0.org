@@ -8,7 +8,7 @@
  *
  * parts of this file are derived from the OMS program.
  *
- * $Id: dvbspu.c 1.21 2006/04/17 12:45:05 kls Exp $
+ * $Id$
  */
 
 #include "dvbspu.h"
@@ -504,9 +504,8 @@ int cDvbSpuDecoder::setTime(uint32_t pts)
                 default:
                     esyslog("invalid sequence in control header (%.2x)",
                             spu[i]);
-                    assert(0);
-                    i++;
-                    break;
+                    Empty();
+                    return 0;
                 }
             }
             if (fodd != 0 && feven != 0) {

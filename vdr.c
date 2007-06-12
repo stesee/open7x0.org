@@ -1,10 +1,10 @@
 /*
  * vdr.c: Video Disk Recorder main program
  *
- * Many things have been changed allover the source of the vdr, in 
+ * Many things have been changed allover the source of the vdr, in
  * order to port it to Gxgaxxt x7x0xx Set-Top-Box.
  * The orginal vdr was written by Klaus Schmidinger (see Copyright below).
- * As the orginal the newly written Parts of the Port are distributed 
+ * As the orginal the newly written Parts of the Port are distributed
  * under the terms of the GNU General Public License (see below)
  * For these Parts:
  * Copyright (C) 2006 Andreas Koch from the Open7x0-Group
@@ -34,7 +34,7 @@
  *
  * The project's page is at http://www.cadsoft.de/vdr
  *
- * $Id: vdr.c 1.274 2006/06/04 09:04:47 kls Exp $
+ * $Id$
  */
 
 #include <getopt.h>
@@ -47,9 +47,10 @@
 //M7X0 BEGIN AK
 // Won't work with uclibc
 //M7X0TODO: Fix this
-#if 0  
+#if 0
 #include <sys/capability.h>
 #endif
+#include <sys/sysmips.h>
 //M7X0 END AK
 
 #include <sys/prctl.h>
@@ -67,6 +68,7 @@
 #include "i18n.h"
 #include "interface.h"
 #include "keys.h"
+#include "libsi/si.h"
 #include "lirc.h"
 #include "menu.h"
 #include "osdbase.h"
@@ -81,6 +83,9 @@
 #include "tools.h"
 #include "transfer.h"
 #include "videodir.h"
+//M7X0 BEGIN AK
+#include "builddate.h"
+//M7X0 END AK
 
 #define MINCHANNELWAIT     10 // seconds to wait between failed channel switchings
 #define ACTIVITYTIMEOUT    60 // seconds before starting housekeeping
@@ -136,7 +141,7 @@ static bool SetCapSysTime(void)
 //M7X0 BEGIN AK
 // Won't work with uclibc
 //M7X0TODO: Fix this
-#if 0  
+#if 0
   cap_t caps = cap_from_text("= cap_sys_time=ep");
   if (!caps) {
      fprintf(stderr, "vdr: cap_from_text failed: %s\n", strerror(errno));
@@ -451,7 +456,7 @@ int main(int argc, char *argv[])
                );
         }
      if (DisplayVersion)
-        printf("vdr (%s/%s) - The Video Disk Recorder\n", VDRVERSION, APIVERSION);
+        printf("vdr (%s/%s/%s) - The Video Disk Recorder\n", VDRVERSION, APIVERSION, VDRM7X0VERSION);
      if (PluginManager.HasPlugins()) {
         if (DisplayHelp)
            printf("Plugins: vdr -P\"name [OPTIONS]\"\n\n");
@@ -475,18 +480,19 @@ int main(int argc, char *argv[])
   // Check for UTF-8 and exit if present - asprintf() will fail if it encounters 8 bit ASCII codes
   char *LangEnv;
   if ((LangEnv = getenv("LANG"))     != NULL && strcasestr(LangEnv, "utf") ||
+      (LangEnv = getenv("LC_ALL"))   != NULL && strcasestr(LangEnv, "utf") ||
       (LangEnv = getenv("LC_CTYPE")) != NULL && strcasestr(LangEnv, "utf")) {
      fprintf(stderr, "vdr: please turn off UTF-8 before starting VDR\n");
      return 2;
      }
 
   // Log file:
-//M7X0 BEGIN AK	
-//Syslog not supported yet  
- /* if (SysLogLevel > 0)
-     openlog("vdr", LOG_CONS, SysLogTarget); // LOG_PID doesn't work as expected under NPTL */
-//M7X0 END AK	
-	  
+//M7X0 BEGIN AK
+   // Syslog reactivated
+  if (SysLogLevel > 0)
+     openlog("vdr", LOG_CONS, SysLogTarget); // LOG_PID doesn't work as expected under NPTL
+//M7X0 END AK
+
 
   // Check the video directory:
 
@@ -501,7 +507,7 @@ int main(int argc, char *argv[])
 //M7X0 BEGIN AK
      if (daemon(1, 1) == -1) {
 			char __errorstr[256];
-			strerror_r(errno,__errorstr,256); 
+			strerror_r(errno,__errorstr,256);
 			__errorstr[255]=0;
         //fprintf(stderr, "vdr: %m\n");
         esyslog("ERROR: %s",__errorstr);
@@ -517,7 +523,26 @@ int main(int argc, char *argv[])
      HasStdin = true;
      }
 
-  isyslog("VDR version %s started", VDRVERSION);
+//M7X0 BEGIN AK
+  isyslog("VDR version %s m7x0 version %s started", VDRVERSION,VDRM7X0VERSION);
+
+  // This will turned on if I'm sure no alignment issues are in .
+  // Unaligned memory access causes a cpu exception on mips systems
+  // which is handled by a the kernel, but this is very slow.
+  // Use get_unaligned/put_unaligned, if you run into trouble with
+  // this. To detect such issues this should be enabled.
+  // For the moment leave it, because it causes a hard crash, only pluging
+  // helps. This seems to be a kernel issue see arch/mips/kernel/unaligned.c
+  //
+  // If you get an SIGBUS (the broken uclibc 0.9.19 thinks
+  // it is SIGUSR1), it is normally caused by unaligned access.
+
+  //sysmips(MIPS_FIXADE, 0, 0, 0 );
+/* This is code to show what happens in unaligned case:
+  uchar testUnalignedChar[] = "abcdefghijkl";
+  int *testUnalignedInt = (int *) (testUnalignedChar + 2);
+  isyslog("Unaligned Access %d",*testUnalignedInt);*/
+//M7X0 END AK
   if (StartedAsRoot && VdrUser)
      isyslog("switched to user '%s'", VdrUser);
   if (DaemonMode)
@@ -807,15 +832,20 @@ int main(int argc, char *argv[])
                   bool NeedsTransponder = false;
                   if (Timer->HasFlags(tfActive) && !Timer->Recording()) {
                      if (Timer->HasFlags(tfVps)) {
-                        if (Timer->Matches(Now, true, Setup.VpsMargin))
+                        if (Timer->Matches(Now, true, Setup.VpsMargin)) {
                            InVpsMargin = true;
-                        else if (Timer->Event())
+                           Timer->SetInVpsMargin(InVpsMargin);
+                           }
+                        else if (Timer->Event()) {
+                           InVpsMargin = Timer->Event()->StartTime() <= Now && Timer->Event()->RunningStatus() == SI::RunningStatusUndefined;
                            NeedsTransponder = Timer->Event()->StartTime() - Now < VPSLOOKAHEADTIME * 3600 && !Timer->Event()->SeenWithin(VPSUPTODATETIME);
+                           }
                         else {
                            cSchedulesLock SchedulesLock;
                            const cSchedules *Schedules = cSchedules::Schedules(SchedulesLock);
                            if (Schedules) {
                               const cSchedule *Schedule = Schedules->GetSchedule(Timer->Channel());
+                              InVpsMargin = !Schedule; // we must make sure we have the schedule
                               NeedsTransponder = Schedule && !Schedule->PresentSeenWithin(VPSUPTODATETIME);
                               }
                            }
@@ -824,10 +854,10 @@ int main(int argc, char *argv[])
                      else
                         NeedsTransponder = Timer->Matches(Now, true, TIMERLOOKAHEADTIME);
                      }
-                  Timer->SetInVpsMargin(InVpsMargin);
                   if (NeedsTransponder || InVpsMargin) {
                      // Find a device that provides the required transponder:
                      cDevice *Device = NULL;
+                     bool DeviceAvailable = false;
                      for (int i = 0; i < cDevice::NumDevices(); i++) {
                          cDevice *d = cDevice::GetDevice(i);
                          if (d && d->ProvidesTransponder(Timer->Channel())) {
@@ -836,18 +866,17 @@ int main(int argc, char *argv[])
                                Device = d;
                                break;
                                }
-                            else if (Now - DeviceUsed[d->DeviceNumber()] > TIMERDEVICETIMEOUT) {
-                               // only check other devices if they have been left alone for a while
-                               if (d->MaySwitchTransponder())
-                                  // this one can be switched without disturbing anything else
-                                  Device = d;
-                               else if (!Device && InVpsMargin && !d->Receiving() && d->ProvidesTransponderExclusively(Timer->Channel()))
-                                  // use this one only if no other with less impact can be found
-                                  Device = d;
+                            bool timeout = Now - DeviceUsed[d->DeviceNumber()] > TIMERDEVICETIMEOUT; // only check other devices if they have been left alone for a while
+                            if (d->MaySwitchTransponder()) {
+                               DeviceAvailable = true; // avoids using the actual device below
+                               if (timeout)
+                                  Device = d; // only check other devices if they have been left alone for a while
                                }
+                            else if (timeout && !Device && InVpsMargin && !d->Receiving() && d->ProvidesTransponderExclusively(Timer->Channel()))
+                               Device = d; // use this one only if no other with less impact can be found
                             }
                          }
-                     if (!Device && InVpsMargin) {
+                     if (!Device && InVpsMargin && !DeviceAvailable) {
                         cDevice *d = cDevice::ActualDevice();
                         if (!d->Receiving() && d->ProvidesTransponder(Timer->Channel()) && Now - DeviceUsed[d->DeviceNumber()] > TIMERDEVICETIMEOUT)
                            Device = d; // use the actual device as a last resort
@@ -951,17 +980,20 @@ int main(int argc, char *argv[])
           case kCommands:   DirectMainFunction(osCommands); break;
           case kUser1 ... kUser9: cRemote::PutMacro(key); key = kNone; break;
           case k_Plugin: {
-               DELETE_MENU;
-               if (cControl::Control())
-                  cControl::Control()->Hide();
-               cPlugin *plugin = cPluginManager::GetPlugin(cRemote::GetPlugin());
-               if (plugin) {
-                  Menu = plugin->MainMenuAction();
-                  if (Menu)
-                     Menu->Show();
+               const char *PluginName = cRemote::GetPlugin();
+               if (PluginName) {
+                  DELETE_MENU;
+                  if (cControl::Control())
+                     cControl::Control()->Hide();
+                  cPlugin *plugin = cPluginManager::GetPlugin(PluginName);
+                  if (plugin) {
+                     Menu = plugin->MainMenuAction();
+                     if (Menu)
+                        Menu->Show();
+                     }
+                  else
+                     esyslog("ERROR: unknown plugin '%s'", PluginName);
                   }
-               else
-                  esyslog("ERROR: unknown plugin '%s'", cRemote::GetPlugin());
                key = kNone; // nobody else needs to see these keys
                }
                break;
@@ -972,7 +1004,7 @@ int main(int argc, char *argv[])
           case kChanDn:
                if (!Interact)
                   Menu = new cDisplayChannel(NORMALKEY(key));
-               else if (cDisplayChannel::IsOpen()) {
+               else if (cDisplayChannel::IsOpen() || cControl::Control()) {
                   Interact->ProcessKey(key);
                   continue;
                   }
@@ -981,33 +1013,43 @@ int main(int argc, char *argv[])
                key = kNone; // nobody else needs to see these keys
                break;
           // Volume control:
-          //case kVolUp|k_Repeat:
-          //case kVolUp:
-          //case kVolDn|k_Repeat:
-          //case kVolDn:
-          // m7x0 volume control via left/right
-	  case kLeft|k_Repeat:
-	  case kLeft:
-	  case kRight|k_Repeat:
-	  case kRight:          
+          case kVolUp|k_Repeat:
+          case kVolUp:
+          case kVolDn|k_Repeat:
+          case kVolDn:
           case kMute:
+//M7X0 BEGIN AK
+// Taken from gambler
+          // m7x0 volume control via left/right
+          case kLeft|k_Repeat:
+          case kLeft:
+          case kRight|k_Repeat:
+          case kRight:
                if (key == kMute) {
                   if (!cDevice::PrimaryDevice()->ToggleMute() && !Menu) {
                      key = kNone; // nobody else needs to see these keys
                      break; // no need to display "mute off"
                      }
-                  }
-               else 
-                  if (!Menu)  
-                     cDevice::PrimaryDevice()->SetVolume(NORMALKEY(key) == kLeft ? -VOLUMEDELTA : VOLUMEDELTA); 
-                  if (!Menu && !cOsd::IsOpen()) {
+
+                  if (!Menu && !cOsd::IsOpen())
                      Menu = cDisplayVolume::Create();
-                     cDisplayVolume::Process(key);
-                     key = kNone; // nobody else needs to see these keys
-                                  // m7x0 we need the l/r keys in setup menu, 
-                                  // keep it in menu mode
-                     }             
+
+                  cDisplayVolume::Process(key);
+                  key = kNone;
+                  }
+               else if ((!Menu && !cOsd::IsOpen()) || NORMALKEY(key) == kVolUp  || NORMALKEY(key) == kVolDn) {
+                  if (NORMALKEY(key) == kVolUp  || NORMALKEY(key) == kVolDn)
+                     cDevice::PrimaryDevice()->SetVolume(NORMALKEY(key) == kVolDn ? -VOLUMEDELTA : VOLUMEDELTA);
+                  if (!Menu && !cOsd::IsOpen())
+                     Menu = cDisplayVolume::Create();
+
+                  cDisplayVolume::Process(key);
+                  key = kNone; // nobody else needs to see these keys
+                               // m7x0 we need the l/r keys in setup menu,
+                               // keep it in menu mode
+                  }
                break;
+//M7X0 END AK
           // Audio track control:
           case kAudio:
                if (cControl::Control())
@@ -1021,7 +1063,6 @@ int main(int argc, char *argv[])
                key = kNone;
                break;
           // Pausing live video:
-          // m7x0 TODO: get play/pause working
           case kPause:
                if (!cControl::Control()) {
                   DELETE_MENU;
@@ -1031,7 +1072,6 @@ int main(int argc, char *argv[])
                   }
                break;
           // Instant recording:
-          // m7x0 TODO: get stop/record working
           case kRecord:
                if (!cControl::Control()) {
                   if (cRecordControls::Start())
@@ -1055,16 +1095,18 @@ int main(int argc, char *argv[])
                   }
                if (cPluginManager::Active(tr("shut down anyway?")))
                   break;
-               cTimer *timer = Timers.GetNextActiveTimer();
-               time_t Next  = timer ? timer->StartTime() : 0;
-               time_t Delta = timer ? Next - time(NULL) : 0;
-               if (Next && Delta <= Setup.MinEventTimeout * 60) {
-                  char *buf;
-                  asprintf(&buf, tr("Recording in %ld minutes, shut down anyway?"), Delta / 60);
-                  bool confirm = Interface->Confirm(buf);
-                  free(buf);
-                  if (!confirm)
-                     break;
+               if (!cRecordControls::Active()) {
+                  cTimer *timer = Timers.GetNextActiveTimer();
+                  time_t Next  = timer ? timer->StartTime() : 0;
+                  time_t Delta = timer ? Next - time(NULL) : 0;
+                  if (Next && Delta <= Setup.MinEventTimeout * 60) {
+                     char *buf;
+                     asprintf(&buf, tr("Recording in %ld minutes, shut down anyway?"), Delta / 60);
+                     bool confirm = Interface->Confirm(buf);
+                     free(buf);
+                     if (!confirm)
+                        break;
+                     }
                   }
                ForceShutdown = true;
                break;
@@ -1149,14 +1191,12 @@ int main(int argc, char *argv[])
                   }
              // Direct Channel Select:
              case k1 ... k9:
+//M7X0 BEGIN AK
              // Previous/Next rotates through channel groups:
              case kPrev|k_Repeat:
              case kPrev:
              case kNext|k_Repeat:
              case kNext:
-             // Left/Right rotates through channel groups:
-             // m7x0 note: rotation works. 
-             // press "OK" and then "left/right"
              //case kLeft|k_Repeat:
              //case kLeft:
              //case kRight|k_Repeat:
@@ -1168,6 +1208,7 @@ int main(int argc, char *argv[])
              case kDown:
                   Menu = new cDisplayChannel(NORMALKEY(key));
                   break;
+//M7X0 END AK
              // Viewing Control:
              case kOk:   LastChannel = -1; break; // forces channel display
              // Instant resume of the last viewed recording:
@@ -1190,7 +1231,7 @@ int main(int argc, char *argv[])
                  Skins.Message(mtInfo, tr("Editing process finished"));
               }
            }
-        if (!Interact && ((!cRecordControls::Active() && !cCutter::Active() && !cPluginManager::Active() && (!Interface->HasSVDRPConnection() || UserShutdown)) || ForceShutdown)) {
+        if (!Interact && ((!cRecordControls::Active() && !cCutter::Active() && (!Interface->HasSVDRPConnection() || UserShutdown)) || ForceShutdown)) {
            time_t Now = time(NULL);
            if (Now - LastActivity > ACTIVITYTIMEOUT) {
               // Shutdown:
@@ -1207,6 +1248,16 @@ int main(int argc, char *argv[])
                        }
                     else
                        LastActivity = 1;
+                    }
+                 if (timer && Delta < Setup.MinEventTimeout * 60 && ForceShutdown) {
+                    Delta = Setup.MinEventTimeout * 60;
+                    Next = Now + Delta;
+                    timer = NULL;
+                    dsyslog("reboot at %s", *TimeToString(Next));
+                    }
+                 if (!ForceShutdown && cPluginManager::Active()) {
+                    LastActivity = Now - Setup.MinUserInactivity * 60 + SHUTDOWNRETRY; // try again later
+                    continue;
                     }
                  if (!Next || Delta > Setup.MinEventTimeout * 60 || ForceShutdown) {
                     ForceShutdown = false;
@@ -1248,7 +1299,11 @@ int main(int argc, char *argv[])
            }
         // Main thread hooks of plugins:
         PluginManager.MainThreadHook();
-        }
+	//m7x0 auto aspect
+	//dsyslog("DEBUG: VideoFormet -> %i",eVideoFormat(Setup.VideoFormat));
+	if(eVideoFormat(Setup.VideoFormat)==2)
+	    cDevice::PrimaryDevice()->CheckStreamAspect();
+	}
   if (Interrupted)
      isyslog("caught signal %d", Interrupted);
 
@@ -1276,12 +1331,12 @@ Exit:
   if (WatchdogTimeout > 0)
      dsyslog("max. latency time %d seconds", MaxLatencyTime);
   isyslog("exiting");
- 
-//M7X0 BEGIN AK	
-//Syslog not supported yet  
-/*  if (SysLogLevel > 0)
-     closelog();*/
-//M7X0 END AK	
+
+//M7X0 BEGIN AK
+  //Syslog  reactivated
+  if (SysLogLevel > 0)
+     closelog();
+//M7X0 END AK
   if (HasStdin)
      tcsetattr(STDIN_FILENO, TCSANOW, &savedTm);
   if (cThread::EmergencyExit()) {

@@ -4,7 +4,7 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: recording.c 1.148 2006/04/29 13:22:20 kls Exp $
+ * $Id$
  */
 
 #include "recording.h"
@@ -196,6 +196,7 @@ void AssertFreeDiskSpace(int Priority, bool Force)
 
 cResumeFile::cResumeFile(const char *FileName)
 {
+
   fileName = MALLOC(char, strlen(FileName) + strlen(RESUMEFILESUFFIX) + 1);
   if (fileName) {
      strcpy(fileName, FileName);
@@ -225,6 +226,13 @@ int cResumeFile::Read(void)
            resume = -1;
            LOG_ERROR_STR(fileName);
            }
+//M7X0 BEGIN AK
+#if BYTE_ORDER == BIG_ENDIAN
+        else
+           resume = bswap_32(resume);
+#endif
+//M7X0 END AK
+
         close(f);
         }
      else if (errno != ENOENT)
@@ -235,6 +243,11 @@ int cResumeFile::Read(void)
 
 bool cResumeFile::Save(int Index)
 {
+//M7X0 BEGIN AK
+#if BYTE_ORDER == BIG_ENDIAN
+  Index = bswap_32(Index);
+#endif
+//M7X0 END AK
   if (fileName) {
      int f = open(fileName, O_WRONLY | O_CREAT | O_TRUNC, DEFFILEMODE);
      if (f >= 0) {
@@ -941,13 +954,18 @@ bool cRecordings::StateChanged(int &State)
 
 void cRecordings::TouchUpdate(void)
 {
+  bool needsUpdate = NeedsUpdate();
   TouchFile(UpdateFileName());
-  lastUpdate = time(NULL); // make sure we don't tigger ourselves
+  if (!needsUpdate)
+     lastUpdate = time(NULL); // make sure we don't tigger ourselves
 }
 
 bool cRecordings::NeedsUpdate(void)
 {
-  return lastUpdate < LastModifiedTime(UpdateFileName());
+  time_t lastModified = LastModifiedTime(UpdateFileName());
+  if (lastModified > time(NULL))
+     return false; // somebody's clock isn't running correctly
+  return lastUpdate < lastModified;
 }
 
 bool cRecordings::Update(bool Wait)
@@ -970,7 +988,7 @@ cRecording *cRecordings::GetByName(const char *FileName)
   return NULL;
 }
 
-void cRecordings::AddByName(const char *FileName)
+void cRecordings::AddByName(const char *FileName, bool TriggerUpdate)
 {
   LOCK_THREAD;
   cRecording *recording = GetByName(FileName);
@@ -978,7 +996,8 @@ void cRecordings::AddByName(const char *FileName)
      recording = new cRecording(FileName);
      Add(recording);
      ChangeState();
-     TouchUpdate();
+     if (TriggerUpdate)
+        TouchUpdate();
      }
 }
 
@@ -1191,10 +1210,19 @@ cIndexFile::cIndexFile(const char *FileName, bool Record)
                           close(f);
                           f = -1;
                           }
+//M7X0 BEGIN AK
+#if BYTE_ORDER == BIG_ENDIAN
+                       else {
+                          for (int j=0; j <= last; j++)
+                              index[j].offset = bswap_32(index[j].offset);
+                          }
+#endif
+//M7X0 END AK
                        // we don't close f here, see CatchUp()!
                        }
                     else
                        LOG_ERROR_STR(fileName);
+
                     }
                  else
                     esyslog("ERROR: can't allocate %zd bytes for index '%s'", size * sizeof(tIndex), fileName);
@@ -1206,7 +1234,8 @@ cIndexFile::cIndexFile(const char *FileName, bool Record)
         else if (!Record)
            isyslog("missing index file %s", fileName);
         if (Record) {
-           if ((f = open(fileName, O_WRONLY | O_CREAT | O_APPEND, DEFFILEMODE)) >= 0) {
+           if ((f = open(fileName, O_RDWR | O_CREAT | O_APPEND, DEFFILEMODE)) >= 0) {
+//M7X0 END AK
               if (delta) {
                  esyslog("ERROR: padding index file with %d '0' bytes", delta);
                  while (delta--)
@@ -1264,6 +1293,12 @@ bool cIndexFile::CatchUp(int Index)
                         f = -1;
                         break;
                         }
+//M7X0 BEGIN AK
+#if BYTE_ORDER == BIG_ENDIAN
+                     for (int j=last+1; j <= newLast; j++)
+                         index[j].offset = bswap_32(index[j].offset);
+#endif
+//M7X0 END AK
                      last = newLast;
                      }
                   else
@@ -1287,6 +1322,12 @@ bool cIndexFile::Write(uchar PictureType, uchar FileNumber, int FileOffset)
 {
   if (f >= 0) {
      tIndex i = { FileOffset, PictureType, FileNumber, 0 };
+//M7X0 BEGIN AK
+#if BYTE_ORDER == BIG_ENDIAN
+     i.offset = bswap_32(i.offset);
+#endif
+//M7X0 END AK
+
      if (safe_write(f, &i, sizeof(i)) < 0) {
         LOG_ERROR_STR(fileName);
         close(f);
@@ -1298,6 +1339,64 @@ bool cIndexFile::Write(uchar PictureType, uchar FileNumber, int FileOffset)
   return f >= 0;
 }
 
+//M7X0 BEGIN AK
+bool cIndexFile::Write(sPesResult *Picture,  int PictureCount , uchar FileNumber, int FileOffset)
+{
+  if (f >= 0) {
+     tIndex inds[PictureCount];
+     int i;
+     int count=0;
+     for (i = 0;i < PictureCount; i++)
+         if (Picture[i].pictureType) {
+
+#if BYTE_ORDER == BIG_ENDIAN
+            inds[count].offset = bswap_32(FileOffset + Picture[i].offset);
+#else
+            inds[count].offset = FileOffset + Picture[i].offset;
+#endif
+
+            inds[count].type = Picture[i].pictureType;
+            inds[count].number = FileNumber;
+            inds[count++].reserved = 0;
+            }
+
+     if (count) {
+        if (safe_write(f, inds, sizeof(tIndex)*count) < 0) {
+           LOG_ERROR_STR(fileName);
+           close(f);
+           f = -1;
+          return false;
+          }
+        last+= count;
+        }
+     }
+  return f >= 0;
+}
+
+int cIndexFile::StripOffLast(void) {
+  if (f < 0)
+     return -1;
+
+  off_t newEnd = lseek(f, - sizeof(tIndex), SEEK_END);
+  if (newEnd < 0) {
+     LOG_ERROR;
+     return -1;
+     }
+
+  tIndex ind;
+  if (safe_read(f, &ind, sizeof(tIndex)) < 0 ) {
+     LOG_ERROR;
+     return -1;
+     }
+
+  ftruncate(f, newEnd);
+#if BYTE_ORDER == BIG_ENDIAN
+  return bswap_32(ind.offset);
+#else
+  return ind.offset;
+#endif
+}
+//M7X0 END AK
 bool cIndexFile::Get(int Index, uchar *FileNumber, int *FileOffset, uchar *PictureType, int *Length)
 {
   if (CatchUp(Index)) {
@@ -1386,12 +1485,20 @@ bool cIndexFile::IsStillRecording()
 #define RECORDFILESUFFIX    "/%03d.vdr"
 #define RECORDFILESUFFIXLEN 20 // some additional bytes for safety...
 
+//M7X0 BEGIN AK
+#ifdef USE_DIRECT_IO
+cFileName::cFileName(const char *FileName, bool Record, bool Blocking, bool Direct)
+#else
 cFileName::cFileName(const char *FileName, bool Record, bool Blocking)
+#endif
 {
   file = NULL;
   fileNumber = 0;
   record = Record;
   blocking = Blocking;
+#ifdef USE_DIRECT_IO
+  direct = Direct;
+#endif
   // Prepare the file name:
   fileName = MALLOC(char, strlen(FileName) + RECORDFILESUFFIXLEN);
   if (!fileName) {
@@ -1409,13 +1516,26 @@ cFileName::~cFileName()
   free(fileName);
 }
 
+
 cUnbufferedFile *cFileName::Open(void)
 {
   if (!file) {
+
+#ifdef USE_DIRECT_IO
+     int BlockingFlag = direct ? O_DIRECT : (blocking ? 0 : O_NONBLOCK);
+#else
      int BlockingFlag = blocking ? 0 : O_NONBLOCK;
+#endif
+//M7X0 END AK
      if (record) {
         dsyslog("recording to '%s'", fileName);
+//M7X0 BEGIN AK
+#ifdef USE_DIRECT_IO
+        file = OpenVideoFile(fileName, O_WRONLY | O_CREAT | BlockingFlag);
+#else
         file = OpenVideoFile(fileName, O_RDWR | O_CREAT | BlockingFlag);
+#endif
+//M7X0 END AK
         if (!file)
            LOG_ERROR_STR(fileName);
         }
@@ -1442,6 +1562,13 @@ void cFileName::Close(void)
      }
 }
 
+//M7X0 BEGIN AK
+int cFileName::Unlink(void)
+{
+  Close();
+  return unlink(fileName);
+}
+//M7X0 END AK
 cUnbufferedFile *cFileName::SetOffset(int Number, int Offset)
 {
   if (fileNumber != Number)
@@ -1462,8 +1589,13 @@ cUnbufferedFile *cFileName::SetOffset(int Number, int Offset)
                  unlink (fileName);
                  }
               }
-           else
+//M7X0 BEGIN AK
+           else {
+
+              LOG_ERROR_STR(fileName);
               return SetOffset(Number + 1); // error with fstat - should not happen, just to be on the safe side
+              }
+//M7X0 END AK
            }
         else if (errno != ENOENT) { // something serious has happened
            LOG_ERROR_STR(fileName);

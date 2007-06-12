@@ -4,7 +4,7 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: plugin.h 1.13 2006/04/17 09:18:16 kls Exp $
+ * $Id$
  */
 
 #ifndef __PLUGIN_H
@@ -14,9 +14,15 @@
 #include "menuitems.h"
 #include "osdbase.h"
 #include "tools.h"
+//M7X0 BEGIN AK
+#include "vdr-o7o-api-version.h"
+#include <o7o-toolchain-version.h>
 
-#define VDRPLUGINCREATOR(PluginClass) extern "C" void *VDRPluginCreator(void) { return new PluginClass; }
+#define VDRPLUGINCREATOR(PluginClass) extern "C" void *VDRPluginCreator(void) { return new PluginClass; } \
+                                      extern "C" int getVDRO7OAPIVersion(void) { return VDRO7OAPIVERSION; } \
+                                      extern "C" const char* getO7OToolchainVersion(void) { return O7OTOOLCHAINVERSION; }
 
+//M7X0 END AK
 class cPlugin {
   friend class cDll;
   friend class cPluginManager;

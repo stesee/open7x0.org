@@ -4611,7 +4611,7 @@ Video Disk Recorder Revision History
   (since version 1.3.38 disk access is done in a separate thread, so the watchdog
   timer won't hit).
 - Changed the behaviour of the "Use small font" setup option to *always* use the small
-  font if set to '3' - even if it would have been a fixed font (suggested by Ronny
+  font if set to '2' - even if it would have been a fixed font (suggested by Ronny
   Kornexl).
 - No longer using characters 0x01 and 0x02 for mapping single quote and slash in
   recording names (thanks to Patrick Fischer for reporting that this was a problem
@@ -4782,3 +4782,282 @@ Video Disk Recorder Revision History
 - Changed the log messages when grabbing an image from 'isyslog()' to 'dsyslog()'
   so that they can be suppressed in normal operation mode to avoid clogging the
   log file in case this function is used frequently (suggested by Helmut Auer).
+
+2006-06-18: Version 1.4.1-1
+
+- Added "-fPIC" to the compiler options in Make.config.template when compiling
+  plugins (thanks to Udo Richter). If you use your own Make.config file, you may
+  want to add these lines there, too.
+- Added some comment to cDevice::GetDevice() to explain how the individual
+  conditions are put together to make a decision on which device to use.
+- Updated 'S13E' in 'sources.conf' (thanks to Antti Hartikainen).
+- Now making sure VPS timers don't get stuck with outdated events, and that the
+  actual device isn't used for updating a VPS timer's event as long as other
+  free devices are available.
+- Modified rcu.c to better handle RC5 codes.
+- Added a missing variable initialization in cRingBufferLinear::cRingBufferLinear()
+  (thanks to Prakash Punnoor).
+- Fixed handling relative link targets in the ReadLink() function (reported by
+  Patrick Cernko).
+- Now making sure a VPS timer has a schedule in case the epg.data file didn't
+  contain one when VDR was started.
+
+2006-07-23: Version 1.4.1-2
+
+- Fixed the Makefile of the 'servicedemo' plugin, so that it defines the
+  PLUGIN macro, which allows the Make.config file to react properly when
+  compiling the plugin (reported by Bernd Melcher).
+  Note to all plugin developers: a plugin's Makefile *must* define the PLUGIN
+  macro, even if it doesn't use it itself!
+- Added a comment regarding the PLUGIN macro to the 'newplugin' script.
+- Added '--vfat' to the vdr.1 man page (reported by Udo Richter).
+- Removed a double fdopen() in cPipe::Open() (reported by Stefan Huelswitt).
+- Fixed handling the running status of EPG events before the currently running one,
+  in case they are added after the current event.
+- cEIT::cEIT() now calls pSchedule->SetPresentSeen() even if OnlyRunningStatus is
+  true.
+- Newlines in title and short text of an EPG event are now changed into blanks only
+  after all other fixes, because a short text might become a description.
+- Fixed handling network masks in the svdrphosts.conf file (thanks to Patrick
+  Maier).
+- Fixed handling relative volume settings in the call to cStatus::MsgSetVolume()
+  (reported by Norbert Wentz).
+- Added a missing initialization of 'mutex' in cCiMenu::cCiMenu() and removed
+  some superfluous semicolons in ci.c (thanks to Marco Schlüßler).
+- Fixed handling client side termination of SVDRP connections (thanks to Frank
+  Schmirler).
+- cDevice::GetDevice() now prefers any device that's already receiving and doesn't
+  require detatching receivers (suggested by Anssi Hannula).
+- Fixed handling numeric keys in the channel display after switching channel groups
+  (thanks to Andreas Regel).
+- Menu items derived from cMenuEditIntItem now loop though their values if they
+  have a dedicated minimum or maximum limit (suggested by Andy Grobb). Looping is
+  only done for normal keypresses, not for repeated ones. This allows the user to
+  scroll the value all the way to the limit by keeping the key pressed.
+
+2006-08-06: Version 1.4.1-3
+
+- Fixed assigning schedules to channels in case there is no initial EPG information
+  (thanks to Frank Schmirler).
+- Increased the APIVERSION to allow plugins that relied on the cStatus::MsgSetVolume()
+  bug to react properly (suggested by Stefan Huelswitt).
+- Fixed cDevice::ToggleMute() (thanks to Christoph Haubrich).
+- Fixed deleting the last character of a string menu item in insert mode (thanks
+  to Udo Richter).
+- The /video/.update file is now touched _after_ an editing process is finished
+  in order to avoid excessive disk access (thanks to Artur Skawina).
+- Fixed handling the running status of EPG events before the currently running one,
+  in case they are added after the current event (cont'd from version 1.4.1-2).
+- Modified the shutdown mechanism, so that the shutdown script is never given a
+  time in the past (reported by Helmut Auer). If a timer is currently recording,
+  or a recording would start within the next 30 minutes (default for the "Min.
+  event timeout" setup parameter), and the user insists in shutting down now, the
+  reboot time given to the shutdown script will correspond to a time that is
+  "Min. event timeout" minutes (default is 30) in the future.
+- Avoiding shutdown message "Recording in ... minutes, shut down anyway?" with
+  a negative number of minutes (reported by Udo Richter).
+- Fixed getting the next active timer when shutting down (thanks to Udo Richter).
+- Modified the cSVDRP::Close() function to avoid code duplication.
+
+2006-08-13: Version 1.4.1-4
+
+- Fixed converting the port number in the "connect from..." log message of SVDRP
+  (thanks to Ville Skyttä).
+- Made the cCiSession members sessionId and resourceId uint16_t and uint32_t,
+  respectively, to match their types in the CI session data (thanks to Ville Skyttä
+  for reporting that there are places where ntohs() is assigned to different types).
+- Changed the way a device is selected for receiving in order to keep devices with
+  CAMs better available, even if this means recording on the primary device (reported
+  by Jörn Reder; thanks to Anssi Hannula for improving handling Transfer Mode devices
+  in this).
+- No longer stopping removing empty directories if an error occurs (thanks to
+  Oliver Endriss).
+- Added a log error message to cPlugin::ConfigDirectory() in case a plugin calls it
+  from a separate thread (reported by Udo Richter).
+
+2006-08-20: Version 1.4.1-5
+
+- Replaced the "quick workaround for additional live audio PIDs" in
+  cDvbDevice::SetChannelDevice() with an actual solution in
+  cDvbDevice::SetAudioTrackDevice() in order to prevent sticky PIDs in CAMs,
+  which caused long switching times or completely blank screens when switching
+  between encrypted channels on the same transponder (reported by Tomas Berglund).
+- Adapted cThread::ThreadId() to recent kernels (thanks to Ville Skyttä).
+- Added --remove-destination to the 'cp' command for binaries in the Makefile to
+  avoid a crash in case a new version is installed on a running system (suggested
+  by Petri Hintukainen).
+- Fixed handling "Ca Info" in case the CAM sends this again if the smart card is
+  replaced with a different one.
+
+2006-08-27: Version 1.4.2
+
+- Revoked the change to cDevice::GetDevice() that was introduced in version 1.4.1-2,
+  which made it prefer any device that's already receiving and doesn't require
+  detatching receivers. This change has caused some unwanted behavior, so further
+  testing is necessary.
+
+2006-09-03: Version 1.4.2-1
+
+- Added LC_ALL to the checks for UTF-8 at startup (suggested by Matthias Schwarzott).
+- Fixed the cTimer::operator=() so that it won't mess up the cListObject's pointers
+  (reported by Alexander Rieger).
+- Fixed a memory leak in the cTimer::operator=() when using the 'aux' string
+  (reported by Alexander Rieger).
+- Fixed processing the PDCDescriptor in 'libsi' on big endian systems (thanks to
+  Martin Ostermann).
+- Fixed handling relative volume settings that unmute the audio in the call to
+  cStatus::MsgSetVolume() (reported by Oliver Endriss).
+
+2006-09-09: Version 1.4.2-2
+
+- Fixed cTimer::operator=() in case a cTimer variable is assigned to itself (thanks
+  to Alexander Rieger).
+- Implemented a copy constructor for cTimer (thanks to Udo Richter for reporting that
+  an assignment in svdrp.c didn't use the cTimer::operator=()).
+
+2006-09-17: Version 1.4.2-3
+
+- Added --remove-destination to the 'cp' command for binaries in the Makefiles of
+  the plugins (thanks to Rolf Ahrenberg).
+- The 'skincurses' plugin now adjusts the size of the OSD to the size of the console
+  window.
+- Fixed deleting expired VPS timers (under certain conditions a timer could have been
+  deleted before it even started recording).
+- Updated the Hungarian language texts (thanks to Istvan Koenigsberger and Guido Josten).
+- Fixed handling video directory updates in case the timestamp of the .update file
+  is in the future (thanks to Petri Hintukainen).
+
+2006-09-23: Version 1.4.3
+
+- Official release.
+
+2006-10-08: Version 1.4.3-1
+
+- The function cThread::Cancel() now only sets 'running' to false and does not
+  actually kill the thread if the special value -1 is given (suggested by Udo Richter).
+- Changed the I18nNormalizeLanguageCode() check to also allow blanks (and all other
+  printable characters) in the language codes (thanks to Boguslaw Juza for reporting
+  that there are stations that use blanks in these codes). Blanks are replaced with
+  underlines, so that all parts of VDR that rely on language codes to be one word
+  (without blanks) work as expected.
+- Now clearing an event's Title, ShortText and Description if there is no
+  ShortEventDescriptor or ExtendedEventDescriptor, respectively (thanks to Boguslaw
+  Juza for reporting that events without an ExtendedEventDescriptor may get
+  duplicate information in their ShortText through the EPG bugfixes in case they
+  are received again).
+- Fixed handling video directory updates in case an other process has touched the
+  .update file after the last NeedsUpdate() check (thanks to Petri Hintukainen).
+- Fixed handling language codes and descriptions of recorded audio tracks on channels
+  with multiple tracks where not all of them appear in the event data (reported by
+  Boguslaw Juza).
+
+2006-10-15: Version 1.4.3-2
+
+- Fixed clearing an event's Title, ShortText and Description in case the data comes
+  from an external source.
+- Updated the Hungarian language texts (thanks to Guido Josten).
+- Fixed a possible crash if cPluginManager::GetPlugin() is called with a NULL
+  pointer (thanks to Petri Hintukainen).
+- Fixed displaying the error log message in case an unknown plugin was requested
+  in a key macro (thanks to Petri Hintukainen).
+- Keys from expanded key macros are now put into the front of the key queue to
+  avoid problems if the queue is not empty at that time (based on a patch from
+  Petri Hintukainen).
+- cKeyMacro now has an explicit counter for the number of keys it contains.
+- cRemote::PutMacro() now sets a lock while it expands the macro (thanks to
+  Petri Hintukainen).
+- Fixed handling plugins from cRemote::PutMacro() and cRemote::CallPlugin()
+  (based on a patch from Petri Hintukainen).
+- Increased the size of the key queue to avoid problems with long key macros.
+
+2006-10-22: Version 1.4.3-3
+
+- Fixed setting audio track descriptions after a replay has been stopped (reported
+  by Ulf Kiener, thanks to Marco Schlüßler for pointing out what caused the problem).
+
+2006-10-29: Version 1.4.3-4
+
+- Fixed deleting EPG events that have a running status of "pausing" or higher.
+- Fixed handling NITs with more than one delivery system descriptor tag for the
+  same transponder.
+
+2006-11-04: Version 1.4.4
+
+- Fixed displaying the replay mode symbol in case of "Multi speed mode" (reported
+  by Marco Schlüßler).
+
+2006-12-03: Version 1.4.4-1
+
+- Some improvements to the man pages (thanks to Ville Skyttä).
+- Fixed a possible segfault in cSkins::Message() (thanks to Udo Richter).
+- Made the getskyepg.pl script of the 'sky' plugin send a user agent message to
+  the server, according to the rules at http://bleb.org/tv/data/listings.
+  If your version of 'wget' doesn't support the -U option to set the user agent,
+  use the new option -U of getskyepg.pl to have the information added to the URL
+  as a query string.
+- The getskyepg.pl script now replaces "&amp;" with "&".
+- Fixed a possible crash in remux.c on 64-bit machines (thanks to Reinhard Nissl).
+- Fixed a typo in the change to the "Use small font" setup option in version 1.3.47
+  in the HISTORY and CONTRIBUTORS file (reported by Andreas Brugger).
+- Added a missing 'const' to cRecordingInfo::ChannelID() (reported by Andreas
+  Brugger). This required the APIVERSION to be increased, so plugins will have to
+  be recompiled.
+- Now calling cPluginManager::Active() only if VDR is really trying to shut down,
+  and waiting for 5 minutes before calling it again (thanks to Jörg Wendel for
+  reporting that cPlugin::Active() was called too often, and to Udo Richter for
+  some hints on how to improve this).
+- Replaced 'unsigned long' with 'uint32_t' and 'uint64' with 'uint64_t' to
+  avoid problems on 64-bit machines.
+
+2006-12-03: Version 1.4.4-2
+
+- Added '#include <stdint.h>' to font.h (reported by Peter Pinnau).
+- Added a compatibility define for 'uint64' to tools.h, so that existing
+  plugins don't need to be modified immediately (reported by Suur Karu).
+  This will be removed in version 1.5.
+
+2007-01-05: Version 1.4.4-3
+
+- Fixed a possible segfault if VDR gets terminated while a message is displayed
+  (thanks to Udo Richter).
+- Fixed the INSTALL section on retrying shutdown later (reported by Udo Richter).
+- When entering text via the numeric keys, the characters are now checked against
+  the allowed characters (thanks to Frank Schmirler).
+- Added a missing break statement in cCiHandler::OpenSession().
+
+2007-01-07: Version 1.4.5
+
+- Official release.
+
+2007-01-28: Version 1.4.5-1
+
+- Fixed i18n characters for the Hungarian texts (thanks to Thomas Günther).
+- Now using cPipe instead of popen() in cCommand::Execute() to avoid problems
+  with open file handles when starting background commands (thanks to Reinhard
+  Nissl).
+
+2007-02-24: Version 1.4.5-2
+
+- Removed 'assert(0)' from cDvbSpuDecoder::setTime() (thanks to Marco Schlüßler).
+- Fixed a possible crash when loading an invalid XPM file (thanks to Martin Wache).
+- Updated satellite names in 'sources.conf' (thanks to Thilo Wunderlich).
+- Fixed handling error status in cDvbTuner::GetFrontendStatus() (thanks to
+  Reinhard Nissl).
+
+2007-03-03: Version 1.4.6
+
+- Updated the Finnish OSD texts (thanks to Rolf Ahrenberg).
+
+2007-04-30: Version 1.4.6-1
+
+- Fixed a busy loop in fast forward if the next video data file is missing
+  (thanks to Reinhard Nissl).
+- Fixed handling frequencies in NitFilter::Process() (thanks to Anssi Hannula).
+- Fixed handling ChannelUp/Down keys if there is currently a replay running
+  (thanks to Marco Schlüßler).
+- Increased the maximum number of CA system ids to cope with the AlphaCrypt
+  CAM's version 3.11 firmware.
+
+2007-05-12: Version 1.4.7
+
+- Official release.

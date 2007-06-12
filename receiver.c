@@ -4,7 +4,7 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: receiver.c 1.5 2006/03/26 14:07:21 kls Exp $
+ * $Id$
  */
 
 #include "receiver.h"
@@ -18,6 +18,9 @@ cReceiver::cReceiver(int Ca, int Priority, int Pid, const int *Pids1, const int 
   ca = Ca;
   priority = Priority;
   numPids = 0;
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+  frameEventsWanted = false;
+#endif
   if (Pid)
      pids[numPids++] = Pid;
   if (Pids1) {

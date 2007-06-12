@@ -4,7 +4,7 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: osdbase.h 1.14 2006/01/06 11:55:30 kls Exp $
+ * $Id$
  */
 
 #ifndef __OSDBASE_H

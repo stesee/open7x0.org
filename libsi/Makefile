@@ -1,7 +1,7 @@
 #
 # Makefile for a libsi
 #
-# $Id: Makefile 1.5 2005/05/29 11:47:12 kls Exp $
+# $Id$
 
 ### The C++ compiler and options:
 -include ../Make.config

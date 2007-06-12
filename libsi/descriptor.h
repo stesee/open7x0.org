@@ -6,7 +6,7 @@
  *   the Free Software Foundation; either version 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
- *   $Id: descriptor.h 1.15 2006/05/28 14:25:30 kls Exp $
+ *   $Id$
  *                                                                         *
  ***************************************************************************/
 

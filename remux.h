@@ -4,12 +4,14 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: remux.h 1.16 2006/03/25 12:27:30 kls Exp $
+ * $Id$
  */
 
 #ifndef __REMUX_H
 #define __REMUX_H
-
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+#define USE_DATAHEADER_IN_RECEIVER 1
+#endif
 #include <time.h> //XXX FIXME: DVB/linux/dvb/dmx.h should include <time.h> itself!!!
 //M7X0 BEGIN AK
 #include "m7x0_dvb/dmx.h"
@@ -25,7 +27,7 @@ enum ePesHeader {
   };
 
 //M7X0 BEGIN AK
-ePesHeader AnalyzePesHeader(const uchar *Data, int Count, int &PesPayloadOffset, bool *ContinuationHeader = NULL, bool *Aligned = NULL);
+inline ePesHeader AnalyzePesHeader(const uchar *Data, int Count, int &PesPayloadOffset, bool *ContinuationHeader = NULL) __attribute__ ((always_inline));
 //M7X0 END AK
 
 // Picture types:
@@ -36,7 +38,7 @@ ePesHeader AnalyzePesHeader(const uchar *Data, int Count, int &PesPayloadOffset,
 
 #define MAXTRACKS 64
 
-class cTS2PES;
+class cRepacker;
 
 class cRemux {
 private:
@@ -45,9 +47,12 @@ private:
   int numUPTerrors;
   bool synced;
   int skipped;
-  cTS2PES *ts2pes[MAXTRACKS];
+  cRepacker *repacker[MAXTRACKS];
   int numTracks;
-  cRingBufferLinear *resultBuffer;
+//M7X0 BEGIN AK
+  cRingBufferResult *resultBuffer;
+  int clearTimeoutCounter;
+//M7X0 END AK
   int resultSkipped;
   int GetPid(const uchar *Data);
 public:
@@ -64,14 +69,21 @@ public:
        ///< data available. SetTimeouts() can be used to modify these timeouts.
        ///< Especially if Put() and Get() are called from the same thread, setting
        ///< both timeouts to 0 is recommended.
-  int Put(const uchar *Data, int Count);
+//M7X0 BEGIN AK
+#if defined(USE_RECEIVER_RINGBUFFER) || defined(DISABLE_RINGBUFFER_IN_RECEIVER)
+  int Put(uchar *Data, int Count, const sTsDataHeader *const Header);
+#else
+  int Put(uchar *Data, int Count);
        ///< Puts at most Count bytes of Data into the remuxer.
        ///< \return Returns the number of bytes actually consumed from Data.
-  uchar *Get(int &Count, uchar *PictureType = NULL);
+#endif
+
+  uchar* Get(int &Count, sPesResult *&Header, int &HeaderCount, int &FirstIFrame);
        ///< Gets all currently available data from the remuxer.
        ///< \return Count contains the number of bytes the result points to, and
        ///< PictureType (if not NULL) will contain one of NO_PICTURE, I_FRAME, P_FRAME
        ///< or B_FRAME.
+//M7X0 END AK
   void Del(int Count);
        ///< Deletes Count bytes from the remuxer. Count must be the number returned
        ///< from a previous call to Get(). Several calls to Del() with fractions of

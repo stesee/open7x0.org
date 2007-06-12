@@ -4,17 +4,22 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: font.c 1.13 2006/04/16 10:59:15 kls Exp $
+ * $Id$
  */
-
+//M7X0 BEGIN AK
+#ifndef OSDPAINTER
 #include "config.h"
+#endif
+
 #include <ctype.h>
 #include "font.h"
 #include "tools.h"
 
+#ifndef OSDPAINTER
 #include "fontfix-iso8859-1.c"
 #include "fontosd-iso8859-1.c"
 #include "fontsml-iso8859-1.c"
+
 
 #include "fontfix-iso8859-2.c"
 #include "fontosd-iso8859-2.c"
@@ -31,7 +36,7 @@
 #include "fontfix-iso8859-13.c"
 #include "fontosd-iso8859-13.c"
 #include "fontsml-iso8859-13.c"
-
+#endif
 #include "fontfix-iso8859-15.c"
 #include "fontosd-iso8859-15.c"
 #include "fontsml-iso8859-15.c"
@@ -39,24 +44,33 @@
 // --- cFont -----------------------------------------------------------------
 
 static const void *const FontData[eDvbCodeSize][eDvbFontSize] = {
+#ifndef OSDPAINTER
   { FontOsd_iso8859_1,  FontFix_iso8859_1,  FontSml_iso8859_1 },
+
   { FontOsd_iso8859_2,  FontFix_iso8859_2,  FontSml_iso8859_2 },
   { FontOsd_iso8859_5,  FontFix_iso8859_5,  FontSml_iso8859_5 },
   { FontOsd_iso8859_7,  FontFix_iso8859_7,  FontSml_iso8859_7 },
   { FontOsd_iso8859_13, FontFix_iso8859_13, FontSml_iso8859_13 },
+#endif
   { FontOsd_iso8859_15, FontFix_iso8859_15, FontSml_iso8859_15 },
   };
 
 static const char *FontCode[eDvbCodeSize] = {
+#ifndef OSDPAINTER
   "iso8859-1",
   "iso8859-2",
   "iso8859-5",
   "iso8859-7",
   "iso8859-13",
+#endif
   "iso8859-15",
   };
-
+#ifndef OSDPAINTER
 eDvbCode cFont::code = code_iso8859_1;
+#else
+eDvbCode cFont::code = code_iso8859_15;
+#endif
+//M7X0 END AK
 cFont *cFont::fonts[eDvbFontSize] = { NULL };
 
 cFont::cFont(const void *Data)
@@ -118,18 +132,20 @@ void cFont::SetFont(eDvbFont Font, const void *Data)
   delete fonts[Font];
   fonts[Font] = new cFont(Data ? Data : FontData[code][Font]);
 }
-
+//M7X0 BEGIN AK
 const cFont *cFont::GetFont(eDvbFont Font)
 {
+#ifndef OSDPAINTER
   if (Setup.UseSmallFont == 0 && Font == fontSml)
      Font = fontOsd;
   else if (Setup.UseSmallFont == 2)
      Font = fontSml;
+#endif
   if (!fonts[Font])
      SetFont(Font);
   return fonts[Font];
 }
-
+//M7X0 END AK
 // --- cTextWrapper ----------------------------------------------------------
 
 cTextWrapper::cTextWrapper(void)

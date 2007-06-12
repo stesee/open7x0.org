@@ -4,7 +4,7 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: player.h 1.19 2006/01/06 11:29:27 kls Exp $
+ * $Id$
  */
 
 #ifndef __PLAYER_H
@@ -12,9 +12,13 @@
 
 #include "device.h"
 #include "osdbase.h"
-
+//M7X0 BEGIN AK
+class cTranfer;
 class cPlayer {
   friend class cDevice;
+
+  friend class cTransfer;
+//M7X0 END AK
 private:
   cDevice *device;
   ePlayMode playMode;
@@ -26,13 +30,15 @@ protected:
   bool DeviceFlush(int TimeoutMs = 0) { return device ? device->Flush(TimeoutMs) : true; }
 //M7X0 BEGIN AK
   void DeviceTrickSpeed(int Speed, bool UseFastForward) { if (device) device->TrickSpeed(Speed,UseFastForward); }
-//M7X0 BEGIN AK  
+//M7X0 BEGIN AK
   void DeviceClear(void) { if (device) device->Clear(); }
   void DevicePlay(void) { if (device) device->Play(); }
   void DeviceFreeze(void) { if (device) device->Freeze(); }
   void DeviceMute(void) { if (device) device->Mute(); }
   void DeviceSetVideoDisplayFormat(eVideoDisplayFormat VideoDisplayFormat) { if (device) device->SetVideoDisplayFormat(VideoDisplayFormat); }
   void DeviceStillPicture(const uchar *Data, int Length) { if (device) device->StillPicture(Data, Length); }
+  void DeviceSetTsPids(int pmtPid, int videoPid) { if (device) device->SetTsReplayPids(pmtPid, videoPid); }
+  int  DeviceGetVideoPid(void) { if (device) return device->GetTsReplayVideoPid(); return 0; }
   void Detach(void);
   virtual void Activate(bool On) {}
        // This function is called right after the cPlayer has been attached to
@@ -40,6 +46,10 @@ protected:
        // It can be used to do things like starting/stopping a thread.
   int PlayPes(const uchar *Data, int Length, bool VideoOnly = false);
        // Sends the given PES Data to the device and returns the number of
+       // bytes that have actually been accepted by the device (or a
+       // negative value in case of an error).
+  int PlayTs(const uchar *Data, int Length);
+       // Sends the given TS Data to the device and returns the number of
        // bytes that have actually been accepted by the device (or a
        // negative value in case of an error).
 public:

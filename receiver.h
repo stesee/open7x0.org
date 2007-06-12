@@ -4,18 +4,29 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: receiver.h 1.4 2006/05/27 09:04:22 kls Exp $
+ * $Id$
  */
 
 #ifndef __RECEIVER_H
 #define __RECEIVER_H
 
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+#define USE_DATAHEADER_IN_RECEIVER 1
+#endif
 #include "device.h"
+//M7X0 BEGIN AK
 
+
+#include "ringbuffer.h"
+class cTransfer;
+//M7X0 END AK
 #define MAXRECEIVEPIDS  64 // the maximum number of PIDs per receiver
 
 class cReceiver {
   friend class cDevice;
+//M7X0 BEGIN AK
+  friend class cTransfer;
+//M7X0 END AK
 private:
   cDevice *device;
   int ca;
@@ -23,6 +34,12 @@ private:
   int pids[MAXRECEIVEPIDS];
   int numPids;
   bool WantsPid(int Pid);
+//M7X0 BEGIN AK
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+  bool frameEventsWanted;
+  bool WantsFrameEvents(void) { return frameEventsWanted;}
+#endif
+//M7X0 END AK
 protected:
   void Detach(void);
   virtual void Activate(bool On) {}
@@ -37,6 +54,14 @@ protected:
                ///< as soon as possible, without any unnecessary delay. Each TS packet
                ///< will be delivered only ONCE, so the cReceiver must make sure that
                ///< it will be able to buffer the data if necessary.
+//M7X0 BEGIN AK
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+  void setFrameEventsWanted(bool On) { frameEventsWanted = On; }
+#endif
+#if defined(USE_RECEIVER_RINGBUFFER) || defined(DISABLE_RINGBUFFER_IN_RECEIVER)
+  virtual void Receive(uchar *Data, int Length, const sTsDataHeader *const Header) { Receive(Data, Length); }
+#endif
+//M7X0 END AK
 public:
   cReceiver(int Ca, int Priority, int Pid, const int *Pids1 = NULL, const int *Pids2 = NULL, const int *Pids3 = NULL);
                ///< Creates a new receiver that requires conditional access Ca and has

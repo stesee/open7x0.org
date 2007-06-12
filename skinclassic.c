@@ -4,7 +4,7 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: skinclassic.c 1.15 2006/03/31 13:59:50 kls Exp $
+ * $Id$
  */
 
 #include "skinclassic.h"

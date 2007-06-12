@@ -4,7 +4,7 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: status.h 1.9 2005/12/31 15:15:25 kls Exp $
+ * $Id$
  */
 
 #ifndef __STATUS_H

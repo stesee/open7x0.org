@@ -4,7 +4,7 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: device.h 1.78 2006/05/28 15:04:24 kls Exp $
+ * $Id$
  */
 
 #ifndef __DEVICE_H
@@ -25,7 +25,7 @@
 
 //M7X0 BEGIN AK
 // More then 2 receivers is definetly too much.
-#define MAXDEVICES         2 // the maximum number of devices in the system
+#define MAXDEVICES         3 // the maximum number of devices in the system
 #define MAXPIDHANDLES      64 // the maximum number of different PIDs per device
 #define MAXRECEIVERS       2 // the maximum number of receivers per device
 //M7X0 END AK
@@ -43,7 +43,11 @@ enum ePlayMode { pmNone,           // audio/video from decoder
                  pmAudioOnly,      // audio only from player, video from decoder
                  pmAudioOnlyBlack, // audio only from player, no video (black screen)
                  pmVideoOnly,      // video only from player, audio from decoder
-                 pmExtern_THIS_SHOULD_BE_AVOIDED
+                 pmTsAudioVideo,     // audio/video from player
+                 pmTsAudioOnly,      // audio only from player, video from decoder
+                 pmTsAudioOnlyBlack, // audio only from player, no video (black screen)
+                 pmTsVideoOnly,      // video only from player, audio from decoder
+                 pmExtern_THIS_SHOULD_BE_AVOIDED,
                  // external player (e.g. MPlayer), release the device
                  // WARNING: USE THIS MODE ONLY AS A LAST RESORT, IF YOU
                  // ABSOLUTELY, POSITIVELY CAN'T IMPLEMENT YOUR PLAYER
@@ -55,6 +59,10 @@ enum ePlayMode { pmNone,           // audio/video from decoder
                  // IN USE. AS A CONSEQUENCE, YOUR PLAYER MAY NOT WORK
                  // IF A PARTICULAR VDR INSTALLATION USES A DEVICE NOT
                  // KNOWN TO YOUR PLAYER.
+//M7X0 BEGIN AK
+                 pmTransferer,
+                 pmTransfererAudioOnly
+//M7X0 END AK
                };
 
 enum eVideoSystem { vsPAL,
@@ -65,6 +73,11 @@ enum eVideoDisplayFormat { vdfPanAndScan,
                            vdfLetterBox,
                            vdfCenterCutOut
                          };
+//m7x0 auto aspect			 
+enum eVideoFormat { vf4_3,
+		    vf16_9,
+		    vfauto
+		   };
 
 enum eTrackType { ttNone,
                   ttAudio,
@@ -93,6 +106,7 @@ struct tTrackId {
 class cPlayer;
 class cReceiver;
 class cPesAssembler;
+class cTransfer;
 
 /// The cDevice class is the base from which actual devices can be derived.
 
@@ -131,9 +145,12 @@ public:
          ///< Gets the device with the given Index.
          ///< \param Index must be in the range 0..numDevices-1.
          ///< \return A pointer to the device, or NULL if the Index was invalid.
-  static cDevice *GetDevice(const cChannel *Channel, int Priority = -1, bool *NeedsDetachReceivers = NULL);
+//M7X0 BEGIN AK
+  static cDevice *GetDevice(const cChannel *Channel, int Priority = -1, bool *NeedsDetachReceivers = NULL, bool forTransferer = false);
+//M7X0 END AK
          ///< Returns a device that is able to receive the given Channel at the
-         ///< given Priority.
+         ///< given Priority, with the least impact on active recordings and
+         ///< live viewing.
          ///< See ProvidesChannel() for more information on how
          ///< priorities are handled, and the meaning of NeedsDetachReceivers.
   static void Shutdown(void);
@@ -185,7 +202,9 @@ public:
          ///< in order to preserve resources for other recordings.
   virtual bool HasDecoder(void) const;
          ///< Tells whether this device has an MPEG decoder.
-
+  virtual void CheckStreamAspect();
+  virtual void SetTvSettings(bool);
+  virtual void SetTvMode(bool);
 // SPU facilities
 
 public:
@@ -205,7 +224,9 @@ public:
   virtual bool ProvidesTransponderExclusively(const cChannel *Channel) const;
          ///< Returns true if this is the only device that is able to provide
          ///< the given channel's transponder.
-  virtual bool ProvidesChannel(const cChannel *Channel, int Priority = -1, bool *NeedsDetachReceivers = NULL) const;
+//M7X0 BEGIN AK
+  virtual bool ProvidesChannel(const cChannel *Channel, int Priority = -1, bool *NeedsDetachReceivers = NULL, bool forTransferer = false) const;
+//M7X0 END AK
          ///< Returns true if this device can provide the given channel.
          ///< In case the device has cReceivers attached to it or it is the primary
          ///< device, Priority is used to decide whether the caller's request can
@@ -259,11 +280,18 @@ public:
          ///< the user, either through replaying or live.
 
 // PID handle facilities
-
+//M7X0 BEGIN AK
+friend class cTransfer;
 private:
   virtual void Action(void);
+  virtual void StartLiveView(bool On, bool AudioOnly) {}
 protected:
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+  enum ePidType { ptAudio, ptVideo, ptPcr, ptTeletext, ptDolby, ptRecVideo, ptOther };
+#else
   enum ePidType { ptAudio, ptVideo, ptPcr, ptTeletext, ptDolby, ptOther };
+#endif
+//M7X0 END AK
   class cPidHandle {
   public:
     int pid;
@@ -344,9 +372,10 @@ public:
          ///< Sets the video display format to the given one (only useful
          ///< if this device has an MPEG decoder).
          ///< A derived class must first call the base class function!
-  virtual void SetVideoFormat(bool VideoFormat16_9);
+  virtual void SetVideoFormat(eVideoFormat VideoFormat);
          ///< Sets the output video format to either 16:9 or 4:3 (only useful
          ///< if this device has an MPEG decoder).
+	 ///< m7x0 auto aspect
   virtual eVideoSystem GetVideoSystem(void);
          ///< Returns the video system of the currently displayed material
          ///< (default is PAL).
@@ -362,10 +391,10 @@ private:
 protected:
 //M7X0 BEGIN AK
 // Was private before
-	  cMutex mutexCurrentAudioTrack;
-//M7X0 END AK
-  virtual void SetAudioTrackDevice(eTrackType Type);
+  cMutex mutexCurrentAudioTrack;
+  virtual void SetAudioTrackDevice(eTrackType Type, const tTrackId *TrackId = NULL);
        ///< Sets the current audio track to the given value.
+//M7X0 END AK
 public:
   void ClrAvailableTracks(bool DescriptionsOnly = false, bool IdsOnly = false);
        ///< Clears the list of currently availabe tracks. If DescriptionsOnly
@@ -504,6 +533,17 @@ public:
        ///< to a complete packet with data from the next call to PlayPes().
        ///< That way any functions called from within PlayPes() will be
        ///< guaranteed to always receive complete PES packets.
+  virtual int PlayTs(const uchar *Data, int Length) { return -1; }
+       ///< Plays all valid TS packets in Data with the given Length.
+       ///< If Data is NULL any leftover data from a previous call will be
+       ///< discarded.
+       ///< Data should point to a sequence of complete TS packets. If the
+       ///< last packet in Data is not complete, it will be copied and combined
+       ///< to a complete packet with data from the next call to PlayTs().
+       ///< A valid PAT and PMT is expected in stream. If there is more than
+       ///< one program in the stream the first
+  virtual void SetTsReplayPids(int pmtPid, int videoPid) { }
+  virtual int GetTsReplayVideoPid(void) { return 0; }
   bool Replaying(void) const;
        ///< Returns true if we are currently replaying.
   bool Transferring(void) const;
@@ -519,7 +559,22 @@ public:
 
 private:
   cMutex mutexReceiver;
-  cReceiver *receiver[MAXRECEIVERS];
+//M7X0 BEGIN AK
+  cReceiver *receiver[MAXRECEIVERS + 1];
+
+  volatile int actionLock;
+  volatile int otherLock;
+  uint64_t normalLockCounter;
+  uint64_t hardLockCounter;
+  inline void FasterLockAction(void) __attribute__ ((always_inline));
+  inline void FasterUnlockAction(void) __attribute__ ((always_inline));
+  inline void FasterLockOther(void) __attribute__ ((always_inline));
+  inline void FasterUnlockOther(void) __attribute__ ((always_inline));
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+  bool firstFrameEventGotten;
+  int ReceiverWantsFrameEvents(int Pid = 0);
+#endif
+//M7X0 END AK
 protected:
   int Priority(void) const;
       ///< Returns the priority of the current receiving session (0..MAXPRIORITY),
@@ -531,19 +586,27 @@ protected:
   virtual void CloseDvr(void);
       ///< Shuts down the DVR.
 //M7X0 BEGIN AK
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+  virtual bool GetTSPackets(uchar *&Data, int &Length, int &Pid, eTsVideoFrame &videoFrame);
+#else
   virtual bool GetTSPackets(uchar *&Data, int &Length, int &Pid);
-      ///< Gets n TS packets, with the same PID (Pid), from the DVR of this device and 
-      ///< returns a pointer to it in Data. Only the first Length bytes (n * TS_SIZE) 
+#endif
+      ///< Gets n TS packets, with the same PID (Pid), from the DVR of this device and
+      ///< returns a pointer to it in Data. Only the first Length bytes (n * TS_SIZE)
       ///< Data points to are valid and may be accessed. If there is currently no
       ///< new data available, Data will be set to NULL. The function returns
       ///< false in case of a non recoverable error, otherwise it returns true,
       ///< even if Data is NULL.
-//M7X0 BEGIN AK
+//M7X0 END AK
 public:
   int  Ca(void) const;
        ///< Returns the ca of the current receiving session(s).
   bool Receiving(bool CheckAny = false) const;
        ///< Returns true if we are currently receiving.
+//M7X0 BEGIN AK
+  bool FreeReceiverSlot(void) const;
+       ///< Returns true if we have a receiver slot left.
+//M7X0 END AK
   bool AttachReceiver(cReceiver *Receiver);
        ///< Attaches the given receiver to this device.
   void Detach(cReceiver *Receiver);

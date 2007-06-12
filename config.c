@@ -4,7 +4,7 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: config.c 1.145 2006/04/17 12:43:57 kls Exp $
+ * $Id$
  */
 
 #include "config.h"
@@ -67,8 +67,8 @@ const char *cCommand::Execute(const char *Parameters)
      asprintf(&cmdbuf, "%s %s", command, Parameters);
   const char *cmd = cmdbuf ? cmdbuf : command;
   dsyslog("executing command '%s'", cmd);
-  FILE *p = popen(cmd, "r");
-  if (p) {
+  cPipe p;
+  if (p.Open(cmd, "r")) {
      int l = 0;
      int c;
      while ((c = fgetc(p)) != EOF) {
@@ -78,7 +78,7 @@ const char *cCommand::Execute(const char *Parameters)
            }
      if (result)
         result[l] = 0;
-     pclose(p);
+     p.Close();
      }
   else
      esyslog("ERROR: can't open pipe for command '%s'", cmd);
@@ -106,8 +106,10 @@ bool cSVDRPhost::Parse(const char *s)
      *(char *)p = 0; // yes, we know it's 'const' - will be restored!
      if (m == 0)
         mask = 0;
-     else
-        mask >>= (32 - m);
+     else {
+        mask <<= (32 - m);
+        mask = htonl(mask);
+        }
      }
   int result = inet_aton(s, &addr);
   if (p)
@@ -249,6 +251,7 @@ cSetup::cSetup(void)
   UseVps = 0;
   VpsMargin = 120;
   RecordingDirs = 1;
+  TvMode = 0;
   VideoDisplayFormat = 1;
   VideoFormat = 0;
   UpdateChannels = 5;
@@ -410,6 +413,7 @@ bool cSetup::Parse(const char *Name, const char *Value)
   else if (!strcasecmp(Name, "UseVps"))              UseVps             = atoi(Value);
   else if (!strcasecmp(Name, "VpsMargin"))           VpsMargin          = atoi(Value);
   else if (!strcasecmp(Name, "RecordingDirs"))       RecordingDirs      = atoi(Value);
+  else if (!strcasecmp(Name, "TvMode"))              TvMode             = atoi(Value);
   else if (!strcasecmp(Name, "VideoDisplayFormat"))  VideoDisplayFormat = atoi(Value);
   else if (!strcasecmp(Name, "VideoFormat"))         VideoFormat        = atoi(Value);
   else if (!strcasecmp(Name, "UpdateChannels"))      UpdateChannels     = atoi(Value);
@@ -478,6 +482,7 @@ bool cSetup::Save(void)
   Store("UseVps",             UseVps);
   Store("VpsMargin",          VpsMargin);
   Store("RecordingDirs",      RecordingDirs);
+  Store("TvMode", 	      TvMode);
   Store("VideoDisplayFormat", VideoDisplayFormat);
   Store("VideoFormat",        VideoFormat);
   Store("UpdateChannels",     UpdateChannels);

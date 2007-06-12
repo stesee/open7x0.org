@@ -4,7 +4,7 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: sdt.c 1.16 2006/04/15 14:12:21 kls Exp $
+ * $Id$
  */
 
 #include "sdt.h"

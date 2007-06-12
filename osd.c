@@ -4,7 +4,7 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: osd.c 1.67 2006/02/26 14:31:31 kls Exp $
+ * $Id$
  */
 
 #include "osd.h"
@@ -48,6 +48,19 @@ void cPalette::SetBpp(int Bpp)
 {
   bpp = Bpp;
   maxColors = 1 << bpp;
+//M7X0 BEGIN AK
+//M7X0 TODO: Find a cleaner way, for this workaround in case of using 8bpp
+// framebuffer.
+// We need at least one index which is fully transparent.
+// This may be only a problem if the area uses 8bpp palette.
+// Allow in this case only 255 colors (last gets reversed for transparency)
+// Can we assume background color (index 0) is always transparent,
+// if we allow only one area??
+#ifndef USE_32BPP_FRAMEBUFFER
+  if (bpp == 8)
+     maxColors--;
+#endif
+//M7X0 END AK
   Reset();
 }
 
@@ -218,14 +231,17 @@ bool cBitmap::LoadXpm(const char *FileName)
                  int w, h, n, c;
                  if (4 != sscanf(s, "%d %d %d %d", &w, &h, &n, &c)) {
                     esyslog("ERROR: faulty 'values' line in XPM file '%s'", FileName);
+                    isXpm = false;
                     break;
                     }
                  lines = h + n + 1;
                  Xpm = MALLOC(char *, lines);
+                 memset(Xpm, 0, lines * sizeof(char*));
                  }
               char *q = strchr(s, '"');
               if (!q) {
                  esyslog("ERROR: missing quotes in XPM file '%s'", FileName);
+                 isXpm = false;
                  break;
                  }
               *q = 0;
@@ -233,16 +249,21 @@ bool cBitmap::LoadXpm(const char *FileName)
                  Xpm[index++] = strdup(s);
               else {
                  esyslog("ERROR: too many lines in XPM file '%s'", FileName);
+                 isXpm = false;
                  break;
                  }
               }
            }
-     if (index == lines)
-        Result = SetXpm(Xpm);
-     else
-        esyslog("ERROR: too few lines in XPM file '%s'", FileName);
-     for (int i = 0; i < index; i++)
-         free(Xpm[i]);
+     if (isXpm) {
+        if (index == lines)
+           Result = SetXpm(Xpm);
+        else
+           esyslog("ERROR: too few lines in XPM file '%s'", FileName);
+        }
+     if (Xpm) {
+        for (int i = 0; i < index; i++)
+            free(Xpm[i]);
+        }
      free(Xpm);
      fclose(f);
      }
@@ -250,7 +271,7 @@ bool cBitmap::LoadXpm(const char *FileName)
      esyslog("ERROR: can't open XPM file '%s'", FileName);
   return Result;
 }
-
+//M7X0 BEGIN AK
 bool cBitmap::SetXpm(const char *const Xpm[], bool IgnoreNone)
 {
   const char *const *p = Xpm;
@@ -268,7 +289,132 @@ bool cBitmap::SetXpm(const char *const Xpm[], bool IgnoreNone)
         b++;
   SetBpp(1 << b);
   SetSize(w, h);
+
   int NoneColorIndex = MAXNUMCOLORS;
+
+  if (c == 1) {
+     int colorIndex[256];
+     memset(colorIndex, 0xff, sizeof(int) * 256);
+
+     for (int i = 0; i < n; i ++) {
+         const char *s = *++p;
+         const int ci = (uint8_t) *s;
+         if (!ci) {
+            esyslog("ERROR: faulty 'colors' line in XPM: '%s'", s);
+            return false;
+            }
+         s = skipspace(s + 1);
+         if (*s != 'c') {
+             esyslog("ERROR: unknown color key in XPM: '%c'", *s);
+             return false;
+             }
+         s = skipspace(s + 1);
+         tColor color = 0;
+         if (NoneColorIndex == MAXNUMCOLORS && strcasecmp(s, "none") == 0) {
+            NoneColorIndex = i;
+            if (IgnoreNone)
+               continue;
+            if (i) {
+               esyslog("WARNING: XPM none color Index %d != 0", i);
+               }
+            color = clrTransparent;
+            }
+         else if (*s != '#') {
+            esyslog("ERROR: unknown color code in XPM: '%c'", *s);
+            return false;
+            }
+         else
+            color = strtoul(++s, NULL, 16) | 0xFF000000;
+         const int ind = (IgnoreNone && i > NoneColorIndex)  ? i - 1 : i;
+         colorIndex[ci] = ind;
+         SetColor(ind, color);
+         }
+
+     for (int y = 0 ; y < h; y++) {
+         const char *s = *++p;
+         int x;
+         for (x = 0 ; x < w && *s ; x++, s++) {
+             const int i = colorIndex[(uint8_t) *s];
+             if (i == -1) {
+                esyslog("ERROR: undefined pixel color in XPM: %d %d '%s'", x, y, s);
+                return false;
+                }
+             if (i == NoneColorIndex)
+                NoneColorIndex = MAXNUMCOLORS;
+             SetIndex(x, y, i);
+             }
+         if (x < w) {
+            esyslog("ERROR: faulty 'colors' line in XPM: '%s'", *p);
+            return false;
+            }
+         }
+     if (NoneColorIndex < MAXNUMCOLORS && !IgnoreNone)
+        return SetXpm(Xpm, true);
+     return true;
+     }
+
+  if (c == 2) {
+     int colorIndex[65536];
+     memset(colorIndex, 0xff, sizeof(int) * 65536);
+
+     for (int i = 0; i < n; i ++) {
+         const char *s = *++p;
+         if (!s[0] || !s[1]) {
+            esyslog("ERROR: faulty 'colors' line in XPM: '%s'", s);
+            return false;
+            }
+
+         const int ci = (uint16_t) ((s[0] << 8) | s[1]);
+         s = skipspace(s + 2);
+         if (*s != 'c') {
+             esyslog("ERROR: unknown color key in XPM: '%c'", *s);
+             return false;
+             }
+         s = skipspace(s + 1);
+         tColor color = 0;
+         if (NoneColorIndex == MAXNUMCOLORS && strcasecmp(s, "none") == 0) {
+            NoneColorIndex = i;
+            if (IgnoreNone)
+               continue;
+            if (i) {
+               esyslog("WARNING: XPM none color Index %d != 0", i);
+               }
+            color = clrTransparent;
+            }
+         else if (*s != '#') {
+            esyslog("ERROR: unknown color code in XPM: '%c'", *s);
+            return false;
+            }
+         else
+            color = strtoul(++s, NULL, 16) | 0xFF000000;
+         const int ind = (IgnoreNone && i > NoneColorIndex)  ? i - 1 : i;
+         colorIndex[ci] = ind;
+         SetColor(ind, color);
+         }
+
+     for (int y = 0 ; y < h; y++) {
+         const char *s = *++p;
+         int x;
+         for (x = 0 ; x < w && s[0] && s[1] ; x++, s += 2) {
+             const int i = colorIndex[(uint16_t) ((s[0] << 8) | s[1])];
+             if (i == -1) {
+                esyslog("ERROR: undefined pixel color in XPM: %d %d '%s'", x, y, s);
+                return false;
+                }
+             if (i == NoneColorIndex)
+                NoneColorIndex = MAXNUMCOLORS;
+             SetIndex(x, y, i);
+             }
+         if (x < w) {
+            esyslog("ERROR: faulty 'colors' line in XPM: '%s'", *p);
+            return false;
+            }
+         }
+     if (NoneColorIndex < MAXNUMCOLORS && !IgnoreNone)
+        return SetXpm(Xpm, true);
+     return true;
+     }
+
   for (int i = 0; i < n; i++) {
       const char *s = *++p;
       if (int(strlen(s)) < c) {
@@ -281,31 +427,36 @@ bool cBitmap::SetXpm(const char *const Xpm[], bool IgnoreNone)
          return false;
          }
       s = skipspace(s + 1);
-      if (strcasecmp(s, "none") == 0) {
-         s = "#00000000";
+      tColor color = 0;
+      if (NoneColorIndex == MAXNUMCOLORS && strcasecmp(s, "none") == 0) {
+         // s = "#00000000";
          NoneColorIndex = i;
          if (IgnoreNone)
             continue;
+         if (i) {
+            esyslog("WARNING: XPM none color Index %d != 0", i);
+            }
+         color = clrTransparent;
          }
-      if (*s != '#') {
+      else if (*s != '#') {
          esyslog("ERROR: unknown color code in XPM: '%c'", *s);
          return false;
          }
-      tColor color = strtoul(++s, NULL, 16) | 0xFF000000;
+      else
+         color = strtoul(++s, NULL, 16) | 0xFF000000;
       SetColor((IgnoreNone && i > NoneColorIndex) ? i - 1 : i, color);
       }
+  const int len = w * c;
   for (int y = 0; y < h; y++) {
       const char *s = *++p;
-      if (int(strlen(s)) != w * c) {
+      if (int(strlen(s)) != len) {
          esyslog("ERROR: faulty pixel line in XPM: %d '%s'", y, s);
          return false;
          }
+
       for (int x = 0; x < w; x++) {
-          for (int i = 0; i <= n; i++) {
-              if (i == n) {
-                 esyslog("ERROR: undefined pixel color in XPM: %d %d '%s'", x, y, s);
-                 return false;
-                 }
+          int i;
+          for (i = 0; i < n; i++) {
               if (strncmp(Xpm[i + 1], s, c) == 0) {
                  if (i == NoneColorIndex)
                     NoneColorIndex = MAXNUMCOLORS;
@@ -313,8 +464,13 @@ bool cBitmap::SetXpm(const char *const Xpm[], bool IgnoreNone)
                  break;
                  }
               }
+          if (i == n) {
+             esyslog("ERROR: undefined pixel color in XPM: %d %d '%s'", x, y, s);
+             return false;
+             }
           s += c;
           }
+//M7X0 END AK
       }
   if (NoneColorIndex < MAXNUMCOLORS && !IgnoreNone)
      return SetXpm(Xpm, true);

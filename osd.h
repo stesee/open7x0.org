@@ -4,7 +4,7 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: osd.h 1.53 2006/02/26 14:45:05 kls Exp $
+ * $Id$
  */
 
 #ifndef __OSD_H
@@ -56,6 +56,9 @@ public:
   cPalette(int Bpp = 8);
         ///< Initializes the palette with the given color depth.
   int Bpp(void) { return bpp; }
+//M7X0 BEGIN AK
+  bool PaletteModified(void) { bool r = modified; modified = false; return r;}
+//M7X0 END AK
   void Reset(void);
         ///< Resets the palette, making it contain no colors.
   int Index(tColor Color);
@@ -202,6 +205,7 @@ public:
        ///< 7: vertical,   falling, upper
   const tIndex *Data(int x, int y);
        ///< Returns the address of the index byte at the given coordinates.
+  tIndex *GetBuffer(void) { return bitmap; }
   };
 
 struct tArea {

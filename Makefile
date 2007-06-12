@@ -4,7 +4,8 @@
 # See the main source file 'vdr.c' for copyright information and
 # how to reach the author.
 #
-# $Id: Makefile 1.91 2006/04/24 17:18:06 kls Exp $
+# $Id$
+
 
 .DELETE_ON_ERROR:
 -include Make.config
@@ -18,13 +19,14 @@ CXXFLAGS ?= -fPIC -g -O2 -Wall -Woverloaded-virtual
 LSIDIR   = ./libsi
 MANDIR   = /usr/local/man
 BINDIR   = /usr/local/bin
+#DVBDIR	 = m7x0_dvb
 
 ifdef WITH_LIBJPEG
-LIBS     = -ljpeg 
+LIBS     = -ljpeg
 endif
 
 LIBS     += -lpthread -ldl # -lcap
-INCLUDES =
+INCLUDES = 
 
 PLUGINDIR= ./PLUGINS
 PLUGINLIBDIR= $(PLUGINDIR)/lib
@@ -104,6 +106,9 @@ font: genfontfile\
       fontfix-iso8859-15.c fontosd-iso8859-15.c fontsml-iso8859-15.c
 	@echo "font files created."
 
+builddate.h: $(OBJS:%.o=%.c)
+	@echo "#define VDRM7X0VERSION \"Preview `date -u +"%F %H:%M"` (o7o subversion revision `svnversion | cut -d ":" -f 2`)\"" > builddate.h
+
 # Implicit rules:
 
 %.o: %.c
@@ -122,6 +127,8 @@ $(DEPFILE): Makefile
 
 vdr: $(OBJS) $(SILIB)
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(OBJS) $(NCURSESLIB) $(LIBS) $(LIBDIRS) $(SILIB) -o vdr
+
+
 
 # The font files:
 
@@ -177,6 +184,8 @@ include-dir:
 	@(cd include/vdr; for i in ../../*.h; do ln -fs $$i .; done)
 	@mkdir -p include/libsi
 	@(cd include/libsi; for i in ../../libsi/*.h; do ln -fs $$i .; done)
+	@mkdir -p include/m7x0_dvb
+	@(cd include/m7x0_dvb; for i in ../../m7x0_dvb/*.h; do ln -fs $$i .; done)
 
 # Plugins:
 
@@ -190,10 +199,12 @@ plugins: include-dir
 	       noapiv="$$noapiv $$i";\
 	       continue;\
 	       fi;\
-	    $(MAKE) -C "$(PLUGINDIR)/src/$$i" all || failed="$$failed $$i";\
+	    DVBDIR=$(abspath .) VDRDIR=$(abspath .) LIBDIR=$(abspath $(PLUGINLIBDIR)) $(MAKE) -C "$(PLUGINDIR)/src/$$i" all || failed="$$failed $$i";\
 	    done;\
 	if [ -n "$$noapiv" ] ; then echo; echo "*** plugins without APIVERSION:$$noapiv"; echo; fi;\
 	if [ -n "$$failed" ] ; then echo; echo "*** failed plugins:$$failed"; echo; fi
+
+# $(MAKE) -C "$(PLUGINDIR)/src/$$i" all || failed="$$failed $$i";\
 
 clean-plugins:
 	@for i in `ls $(PLUGINDIR)/src | grep -v '[^a-z0-9]'`; do $(MAKE) -C "$(PLUGINDIR)/src/$$i" clean; done
@@ -250,3 +261,16 @@ fontclean:
 	-rm -f fontfix*.c fontosd*.c fontsml*.c
 CLEAN: clean fontclean
 
+osdpainter.o: osdpainter.c
+	$(CXX) $(CXXFLAGS) -c $(DEFINES) -DOSDPAINTER $(INCLUDES) -o $@ osdpainter.c
+
+font-osdpainter.o: font.c
+	$(CXX) $(CXXFLAGS) -c $(DEFINES) -DOSDPAINTER $(INCLUDES) -o $@ font.c
+
+tools-osdpainter.o: tools.c
+	$(CXX) $(CXXFLAGS) -c $(DEFINES) -DOSDPAINTER $(INCLUDES) -o $@ tools.c
+OBJS_OSDPAINTER = osdpainter.o dvbosd.o osd.o font-osdpainter.o tools-osdpainter.o
+
+
+osdpainter: $(OBJS_OSDPAINTER)
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(OBJS_OSDPAINTER) -o osdpainter

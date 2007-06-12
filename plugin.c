@@ -4,7 +4,7 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: plugin.c 1.22 2006/04/17 09:20:05 kls Exp $
+ * $Id$
  */
 
 #include "plugin.h"
@@ -15,6 +15,7 @@
 #include <time.h>
 #include "config.h"
 #include "interface.h"
+#include "thread.h"
 
 #define LIBVDR_PREFIX  "libvdr-"
 #define SO_INDICATOR   ".so."
@@ -137,6 +138,8 @@ void cPlugin::SetConfigDirectory(const char *Dir)
 const char *cPlugin::ConfigDirectory(const char *PluginName)
 {
   static char *buffer = NULL;
+  if (!cThread::IsMainThread())
+     esyslog("ERROR: plugin '%s' called cPlugin::ConfigDirectory(), which is not thread safe!", PluginName ? PluginName : "<no name given>");
   free(buffer);
   asprintf(&buffer, "%s/plugins%s%s", configDirectory, PluginName ? "/" : "", PluginName ? PluginName : "");
   return MakeDirs(buffer, true) ? buffer : NULL;
@@ -190,6 +193,22 @@ bool cDll::Load(bool Log)
      }
   handle = dlopen(fileName, RTLD_NOW);
   const char *error = dlerror();
+//M7X0 BEGIN AK
+  if (!error) {
+     const char* (*tcver)(void);
+     tcver = (const char* (*) (void))dlsym(handle, "getO7OToolchainVersion");
+     if (!(error = dlerror()))
+        if (strncmp(tcver(),O7OTOOLCHAINVERSION,strlen(O7OTOOLCHAINVERSION)))
+           error = "O7O Toolchain-Version mismatched";
+     }
+ if (!error) {
+     int (*apiver)(void);
+     apiver = (int(*)(void))dlsym(handle, "getVDRO7OAPIVersion");
+     if (!(error = dlerror()))
+        if (apiver() != VDRO7OAPIVERSION)
+           error = "VDR-O7O-API-Version mismatched";
+     }
+//M7X0 END AK
   if (!error) {
      void *(*creator)(void);
      creator = (void *(*)(void))dlsym(handle, "VDRPluginCreator");
@@ -413,7 +432,7 @@ cPlugin *cPluginManager::GetPlugin(int Index)
 
 cPlugin *cPluginManager::GetPlugin(const char *Name)
 {
-  if (pluginManager) {
+  if (pluginManager && Name) {
      for (cDll *dll = pluginManager->dlls.First(); dll; dll = pluginManager->dlls.Next(dll)) {
          cPlugin *p = dll->Plugin();
          if (p && strcmp(p->Name(), Name) == 0)

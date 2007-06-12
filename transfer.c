@@ -4,114 +4,82 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: transfer.c 1.33 2006/01/29 17:24:39 kls Exp $
+ * $Id$
  */
-
+#include <sys/ioctl.h>
 #include "transfer.h"
+#include "m7x0_dvb/dmx_ext.h"
 
-#define TRANSFERBUFSIZE  MEGABYTE(2)
-#define POLLTIMEOUTS_BEFORE_DEVICECLEAR 6
+//M7X0 BEGIN AK
 
 // --- cTransfer -------------------------------------------------------------
 
-cTransfer::cTransfer(int VPid, const int *APids, const int *DPids, const int *SPids)
-:cReceiver(0, -1, VPid, APids, Setup.UseDolbyDigital ? DPids : NULL, SPids)
-,cThread("transfer")
+cTransfer::cTransfer(const int PPid, const int VPid, const int APid, const int TPid)
+:cReceiver(0, -1, 0, NULL,  NULL, NULL),
+cPlayer(VPid ? pmTransferer : pmTransfererAudioOnly)
 {
-  ringBuffer = new cRingBufferLinear(TRANSFERBUFSIZE, TS_SIZE * 2, true, "Transfer");
-  remux = new cRemux(VPid, APids, Setup.UseDolbyDigital ? DPids : NULL, SPids);
+ pPid = PPid;
+ vPid = VPid;
+ aPid = APid;
+ tPid = TPid;
 }
 
 cTransfer::~cTransfer()
 {
   cReceiver::Detach();
   cPlayer::Detach();
-  delete remux;
-  delete ringBuffer;
 }
 
 void cTransfer::Activate(bool On)
 {
-  if (On)
-     Start();
-  else
-     Cancel(3);
-}
+  if (!On) {
 
-void cTransfer::Receive(uchar *Data, int Length)
+     if (cReceiver::device){
+        cReceiver::device->DelPid(cReceiver::device->pidHandles[cDevice::ptAudio].pid, cDevice::ptAudio);
+        cReceiver::device->DelPid(cReceiver::device->pidHandles[cDevice::ptVideo].pid, cDevice::ptVideo);
+        cReceiver::device->DelPid(cReceiver::device->pidHandles[cDevice::ptPcr].pid, cDevice::ptPcr);
+        cReceiver::device->DelPid(cReceiver::device->pidHandles[cDevice::ptTeletext].pid, cDevice::ptTeletext);
+        cReceiver::device->DelPid(cReceiver::device->pidHandles[cDevice::ptDolby].pid, cDevice::ptDolby);
+        }
+    if (cPlayer::device){
+        cPlayer::device->StartLiveView(false,false);
+        }
+     }
+  else if (cPlayer::device && cReceiver::device) {
+     //cPlayer::device->SetAudioBypass(false);
+     if (!(cReceiver::device->AddPid(pPid, cDevice::ptPcr) && cReceiver::device->AddPid(vPid, cDevice::ptVideo) && cReceiver::device->AddPid(aPid, cDevice::ptAudio))) {
+        esyslog("ERROR: failed to set PIDs while activate Transferer");
+        return;
+        }
+     cReceiver::device->AddPid(tPid, cDevice::ptTeletext);
+     cPlayer::device->StartLiveView(true,false);
+     cPlayer::device->EnsureAudioTrack(false);
+     }
+}
+void cTransfer::SetAudioTrack(eTrackType Type, const tTrackId *TrackId)
 {
-  if (IsAttached() && Running()) {
-     int p = ringBuffer->Put(Data, Length);
-     if (p != Length && Running())
-        ringBuffer->ReportOverflow(Length - p);
-     return;
+  if (cPlayer::device && cReceiver::device) {
+     cPlayer::device->StartLiveView(false,true);
+     cReceiver::device->SetAudioTrackDevice(Type,TrackId);
+     cPlayer::device->StartLiveView(true,true);
+     if (IS_DOLBY_TRACK(Type)) {
+        int diff; int stat;
+        if (cReceiver::device->pidHandles[cDevice::ptPcr].handle >= 0) {
+           stat = ioctl(cReceiver::device->pidHandles[cDevice::ptPcr].handle,DMX_GET_AUDIO_SYNC_DIFF,&diff);
+           dsyslog("cTransfer DEBUG: AC3 Audio Snyc Diff ioctl-Status %d Difference %d", stat, diff);
+           }
+        }
      }
 }
 
-void cTransfer::Action(void)
-{
-  int PollTimeouts = 0;
-  uchar *p = NULL;
-  int Result = 0;
-  while (Running()) {
-        int Count;
-        uchar *b = ringBuffer->Get(Count);
-        if (b) {
-           if (ringBuffer->Available() > TRANSFERBUFSIZE * 9 / 10) {
-              // If the buffer runs full, we have no chance of ever catching up
-              // since the data comes in at the same rate as it goes out (it's "live").
-              // So let's clear the buffer instead of suffering from permanent
-              // overflows.
-              dsyslog("clearing transfer buffer to avoid overflows");
-              DeviceClear();
-              ringBuffer->Clear();
-              remux->Clear();
-              PlayPes(NULL, 0);
-              p = NULL;
-              continue;
-              }
-           Count = remux->Put(b, Count);
-           if (Count)
-              ringBuffer->Del(Count);
-           }
-        if (!p)
-           p = remux->Get(Result);
-        if (p) {
-           cPoller Poller;
-           if (DevicePoll(Poller, 100)) {
-              PollTimeouts = 0;
-              int w = PlayPes(p, Result);
-              if (w > 0) {
-                 p += w;
-                 Result -= w;
-                 remux->Del(w);
-                 if (Result <= 0)
-                    p = NULL;
-                 }
-              else if (w < 0 && FATALERRNO)
-                 LOG_ERROR;
-              }
-           else {
-              PollTimeouts++;
-              if (PollTimeouts == POLLTIMEOUTS_BEFORE_DEVICECLEAR) {
-                 dsyslog("clearing device because of consecutive poll timeouts");
-                 DeviceClear();
-                 ringBuffer->Clear();
-                 remux->Clear();
-                 PlayPes(NULL, 0);
-                 p = NULL;
-                 }
-              }
-           }
-        }
-}
+
 
 // --- cTransferControl ------------------------------------------------------
 
 cDevice *cTransferControl::receiverDevice = NULL;
 
-cTransferControl::cTransferControl(cDevice *ReceiverDevice, int VPid, const int *APids, const int *DPids, const int *SPids)
-:cControl(transfer = new cTransfer(VPid, APids, DPids, SPids), true)
+cTransferControl::cTransferControl(cDevice *ReceiverDevice, const int PPid, const int VPid, const int APid, const int TPid)
+:cControl(transfer = new cTransfer(PPid, VPid, APid, TPid), true)
 {
   ReceiverDevice->AttachReceiver(transfer);
   receiverDevice = ReceiverDevice;

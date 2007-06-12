@@ -8,7 +8,7 @@
  * Robert Schneider <Robert.Schneider@web.de> and Rolf Hakenes <hakenes@hippomi.de>.
  * Adapted to 'libsi' for VDR 1.3.0 by Marcel Wiesweg <marcel.wiesweg@gmx.de>.
  *
- * $Id: eit.c 1.118 2006/05/25 14:35:19 kls Exp $
+ * $Id$
  */
 
 #include "eit.h"
@@ -94,6 +94,8 @@ cEIT::cEIT(cSchedules *Schedules, int Source, u_char Tid, const u_char *Data, bo
          pEvent->SetStartTime(SiEitEvent.getStartTime());
          pEvent->SetDuration(SiEitEvent.getDuration());
          }
+      if (newEvent)
+         pSchedule->AddEvent(newEvent);
       if (Tid == 0x4E) { // we trust only the present/following info on the actual TS
          if (SiEitEvent.getRunningStatus() >= SI::RunningStatusNotRunning)
             pSchedule->SetRunningStatus(pEvent, SiEitEvent.getRunningStatus(), channel);
@@ -232,20 +234,24 @@ cEIT::cEIT(cSchedules *Schedules, int Source, u_char Tid, const u_char *Data, bo
             pEvent->SetTitle(ShortEventDescriptor->name.getText(buffer, sizeof(buffer)));
             pEvent->SetShortText(ShortEventDescriptor->text.getText(buffer, sizeof(buffer)));
             }
+         else if (!HasExternalData) {
+            pEvent->SetTitle(NULL);
+            pEvent->SetShortText(NULL);
+            }
          if (ExtendedEventDescriptors) {
             char buffer[ExtendedEventDescriptors->getMaximumTextLength(": ") + 1];
             pEvent->SetDescription(ExtendedEventDescriptors->getText(buffer, sizeof(buffer), ": "));
             }
+         else if (!HasExternalData)
+            pEvent->SetDescription(NULL);
          }
       delete ExtendedEventDescriptors;
       delete ShortEventDescriptor;
 
-      if (newEvent)
-         pSchedule->AddEvent(newEvent);
-
       pEvent->SetComponents(Components);
 
-      pEvent->FixEpgBugs();
+      if (!HasExternalData)
+         pEvent->FixEpgBugs();
       if (LinkChannels)
          channel->SetLinkChannels(LinkChannels);
       Modified = true;
@@ -253,10 +259,10 @@ cEIT::cEIT(cSchedules *Schedules, int Source, u_char Tid, const u_char *Data, bo
   if (Empty && Tid == 0x4E && getSectionNumber() == 0)
      // ETR 211: an empty entry in section 0 of table 0x4E means there is currently no event running
      pSchedule->ClrRunningStatus(channel);
-  if (OnlyRunningStatus)
-     return;
   if (Tid == 0x4E)
      pSchedule->SetPresentSeen();
+  if (OnlyRunningStatus)
+     return;
   if (Modified) {
      pSchedule->Sort();
      if (!HasExternalData)

@@ -4,7 +4,7 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: remote.c 1.51 2006/05/12 12:40:15 kls Exp $
+ * $Id$
  */
 
 #include "remote.h"
@@ -29,7 +29,8 @@ cRemote *cRemote::learning = NULL;
 char *cRemote::unknownCode = NULL;
 cMutex cRemote::mutex;
 cCondVar cRemote::keyPressed;
-const char *cRemote::plugin = NULL;
+const char *cRemote::keyMacroPlugin = NULL;
+const char *cRemote::callPlugin = NULL;
 
 cRemote::cRemote(const char *Name)
 {
@@ -105,20 +106,17 @@ bool cRemote::PutMacro(eKeys Key)
 {
   const cKeyMacro *km = KeyMacros.Get(Key);
   if (km) {
-     plugin = km->Plugin();
-     for (int i = 1; i < MAXKEYSINMACRO; i++) {
-         if (km->Macro()[i] != kNone) {
-            if (!Put(km->Macro()[i]))
-               return false;
-            }
-         else
-            break;
+     keyMacroPlugin = km->Plugin();
+     cMutexLock MutexLock(&mutex);
+     for (int i = km->NumKeys(); --i > 0; ) {
+         if (!Put(km->Macro()[i], true))
+            return false;
          }
      }
   return true;
 }
 
-bool cRemote::Put(uint64 Code, bool Repeat, bool Release)
+bool cRemote::Put(uint64_t Code, bool Repeat, bool Release)
 {
   char buffer[32];
   snprintf(buffer, sizeof(buffer), "%016LX", Code);
@@ -148,8 +146,8 @@ bool cRemote::Put(const char *Code, bool Repeat, bool Release)
 bool cRemote::CallPlugin(const char *Plugin)
 {
   cMutexLock MutexLock(&mutex);
-  if (!plugin) {
-     plugin = Plugin;
+  if (!callPlugin) {
+     callPlugin = Plugin;
      Put(k_Plugin);
      return true;
      }
@@ -159,8 +157,13 @@ bool cRemote::CallPlugin(const char *Plugin)
 const char *cRemote::GetPlugin(void)
 {
   cMutexLock MutexLock(&mutex);
-  const char *p = plugin;
-  plugin = NULL;
+  const char *p = keyMacroPlugin;
+  if (p)
+     keyMacroPlugin = NULL;
+  else {
+     p = callPlugin;
+     callPlugin = NULL;
+     }
   return p;
 }
 
@@ -200,7 +203,7 @@ cRemotes Remotes;
 
 struct tKbdMap {
   eKbdFunc func;
-  uint64 code;
+  uint64_t code;
   };
 
 static tKbdMap KbdMap[] = {
@@ -261,7 +264,7 @@ void cKbdRemote::SetRawMode(bool RawMode)
   rawMode = RawMode;
 }
 
-uint64 cKbdRemote::MapFuncToCode(int Func)
+uint64_t cKbdRemote::MapFuncToCode(int Func)
 {
   for (tKbdMap *p = KbdMap; p->func != kfNone; p++) {
       if (p->func == Func)
@@ -270,7 +273,7 @@ uint64 cKbdRemote::MapFuncToCode(int Func)
   return (Func <= 0xFF) ? Func : 0;
 }
 
-int cKbdRemote::MapCodeToFunc(uint64 Code)
+int cKbdRemote::MapCodeToFunc(uint64_t Code)
 {
   for (tKbdMap *p = KbdMap; p->func != kfNone; p++) {
       if (p->code == Code)
@@ -293,9 +296,9 @@ int cKbdRemote::ReadKey(void)
   return -1;
 }
 
-uint64 cKbdRemote::ReadKeySequence(void)
+uint64_t cKbdRemote::ReadKeySequence(void)
 {
-  uint64 k = 0;
+  uint64_t k = 0;
   int key1;
 
   if ((key1 = ReadKey()) >= 0) {
@@ -339,7 +342,7 @@ uint64 cKbdRemote::ReadKeySequence(void)
 void cKbdRemote::Action(void)
 {
   while (Running()) {
-        uint64 Command = ReadKeySequence();
+        uint64_t Command = ReadKeySequence();
         if (Command) {
            if (rawMode || !Put(Command)) {
               int func = MapCodeToFunc(Command);

@@ -4,7 +4,7 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: dvbdevice.c 1.159 2006/06/11 09:03:55 kls Exp $
+ * $Id$
  */
 
 #include "dvbdevice.h"
@@ -45,7 +45,7 @@
 #define DEV_DVB_AUDIO     "audio"
 #define DEV_DVB_CA        "ca"
 
-//M7X0 BEGIN AK 
+//M7X0 BEGIN AK
 #define DVBS_TUNE_TIMEOUT  9000 //ms
 #define DVBS_LOCK_TIMEOUT  3000 //ms
 #define DVBC_TUNE_TIMEOUT  9000 //ms
@@ -54,8 +54,11 @@
 #define DVBT_LOCK_TIMEOUT  3000 //ms
 
 
-// Taken from gambler 
+// Taken from gambler
 // For 16:9/4:3 switching
+#define AVSWCMD_TV_FBAS    0x80
+#define AVSWCMD_TV_SVIDEO  0x81
+#define AVSWCMD_TV_OFF	   0x88
 #define AVSWCMD_MODE_16_9  0x89
 #define AVSWCMD_MODE_4_3   0x90
 //M7X0 BEGIN AK
@@ -164,6 +167,7 @@ bool cDvbTuner::Locked(int TimeoutMs)
      locked.TimedWait(mutex, TimeoutMs);
   return tunerStatus >= tsLocked;
 }
+
 //M7X0 BEGIN AK
 // m7x0 seems not to can handle FE_READ_STATUS very well.
 // Seems to cause hangs while change switch and unneed(?) reinits
@@ -175,43 +179,28 @@ bool cDvbTuner::GetFrontendStatus(fe_status_t &Status, int TimeoutMs)
 
   if (TimeoutMs) {
      cPoller Poller(fd_frontend);
-     if (Poller.Poll(TimeoutMs))
-        while (ioctl(fd_frontend, FE_GET_EVENT, &Event) == 0)
-              ;
-    }
-    
-  do {
-     if (ioctl(fd_frontend, FE_READ_STATUS, &Status) == 0){
-        return true;
-        }
-     if (errno == EINTR || errno == EBUSY) { // M7X0 returns in many cases EBUSY 
-        cCondWait::SleepMs(3);
-        continue;
-        }
-     } while (0); 
-
-  return false;
-#if 0 // Orginal code just in case ...
-  if (TimeoutMs) {
-     cPoller Poller(fd_frontend);
      if (Poller.Poll(TimeoutMs)) {
-        dvb_frontend_event Event;
-        while (ioctl(fd_frontend, FE_GET_EVENT, &Event) == 0)
-              ; // just to clear the event queue - we'll read the actual status below
+        bool r = false;
+        while (ioctl(fd_frontend, FE_GET_EVENT, &Event) == 0) {
+              Status = Event.status;
+              r = true;
+              }
+        if (r)
+           return true;
         }
      }
 
-  do {
-     int stat = ioctl(fd_frontend, FE_READ_STATUS, &Status);
-     if (stat == 0)
-        return true;
-     if (stat < 0) {
-        if (errno == EINTR)
-           continue;
+  while (1) {
+        int stat = ioctl(fd_frontend, FE_READ_STATUS, &Status);
+        if (stat == 0)
+           return true;
+        if (stat < 0 && errno != EINTR && errno != EBUSY) // M7X0 returns in many cases EBUSY
+           return false;
+
+        cCondWait::SleepMs(3);
         }
-     } while (0);
+
   return false;
-#endif
 }
 //M7X0 END AK
 
@@ -287,9 +276,18 @@ bool cDvbTuner::SetFrontend(void)
 
          frequency = abs(frequency); // Allow for C-band, where the frequency is less than the LOF
          Frontend.frequency = frequency * 1000UL;
+//M7x0 BEGIN AK
+#ifndef USE_TUNER_AUTOVALUES
          Frontend.inversion = fe_spectral_inversion_t(channel.Inversion());
+#else
+         Frontend.inversion = INVERSION_AUTO;
+#endif
          Frontend.u.qpsk.symbol_rate = channel.Srate() * 1000UL;
+#ifndef USE_TUNER_AUTOVALUES
          Frontend.u.qpsk.fec_inner = fe_code_rate_t(channel.CoderateH());
+#else
+         Frontend.u.qpsk.fec_inner = FEC_AUTO;
+#endif
 
          tuneTimeout = DVBS_TUNE_TIMEOUT;
          lockTimeout = DVBS_LOCK_TIMEOUT;
@@ -300,10 +298,19 @@ bool cDvbTuner::SetFrontend(void)
          // Frequency and symbol rate:
 
          Frontend.frequency = FrequencyToHz(channel.Frequency());
+#ifndef USE_TUNER_AUTOVALUES
          Frontend.inversion = fe_spectral_inversion_t(channel.Inversion());
+#else
+         Frontend.inversion = INVERSION_AUTO;
+#endif
          Frontend.u.qam.symbol_rate = channel.Srate() * 1000UL;
+#ifndef USE_TUNER_AUTOVALUES
          Frontend.u.qam.fec_inner = fe_code_rate_t(channel.CoderateH());
          Frontend.u.qam.modulation = fe_modulation_t(channel.Modulation());
+#else
+         Frontend.u.qam.fec_inner = FEC_AUTO;
+         Frontend.u.qam.modulation = QAM_AUTO;
+#endif
 
          tuneTimeout = DVBC_TUNE_TIMEOUT;
          lockTimeout = DVBC_LOCK_TIMEOUT;
@@ -314,6 +321,8 @@ bool cDvbTuner::SetFrontend(void)
          // Frequency and OFDM paramaters:
 
          Frontend.frequency = FrequencyToHz(channel.Frequency());
+
+#ifndef USE_TUNER_AUTOVALUES
          Frontend.inversion = fe_spectral_inversion_t(channel.Inversion());
          Frontend.u.ofdm.bandwidth = fe_bandwidth_t(channel.Bandwidth());
          Frontend.u.ofdm.code_rate_HP = fe_code_rate_t(channel.CoderateH());
@@ -322,7 +331,16 @@ bool cDvbTuner::SetFrontend(void)
          Frontend.u.ofdm.transmission_mode = fe_transmit_mode_t(channel.Transmission());
          Frontend.u.ofdm.guard_interval = fe_guard_interval_t(channel.Guard());
          Frontend.u.ofdm.hierarchy_information = fe_hierarchy_t(channel.Hierarchy());
-
+#else
+         Frontend.inversion = INVERSION_AUTO;
+         Frontend.u.ofdm.bandwidth = BANDWIDTH_AUTO;
+         Frontend.u.ofdm.code_rate_HP = FEC_AUTO;
+         Frontend.u.ofdm.code_rate_LP = FEC_AUTO;
+         Frontend.u.ofdm.constellation = QAM_AUTO;
+         Frontend.u.ofdm.transmission_mode = TRANSMISSION_MODE_AUTO;
+         Frontend.u.ofdm.guard_interval = GUARD_INTERVAL_AUTO;
+         Frontend.u.ofdm.hierarchy_information = HIERARCHY_AUTO;
+#endif
          tuneTimeout = DVBT_TUNE_TIMEOUT;
          lockTimeout = DVBT_LOCK_TIMEOUT;
          }
@@ -331,15 +349,21 @@ bool cDvbTuner::SetFrontend(void)
          esyslog("ERROR: attempt to set channel with unknown DVB frontend type");
          return false;
     }
-  if (ioctl(fd_frontend, FE_SET_FRONTEND, &Frontend) < 0) {
-//M7x0 BEGIN AK
-     char __errorstr[256];
-     strerror_r(errno,__errorstr,256); 
-     __errorstr[255]=0;
-     esyslog("ERROR: frontend %d: %s", cardIndex,__errorstr);
+
+  do {
+     if (ioctl(fd_frontend, FE_SET_FRONTEND, &Frontend) == 0)
+        return true;
+
+     if (errno != EINTR && errno != EBUSY) {
+        char __errorstr[256];
+        strerror_r(errno,__errorstr,256);
+        __errorstr[255] = 0;
+        esyslog("ERROR: frontend %d: %s", cardIndex,__errorstr);
+        return false;
+        }
+     cCondWait::SleepMs(3);
+     } while (1);
 //M7x0 END AK
-     return false;
-     }
   return true;
 }
 
@@ -350,7 +374,7 @@ void cDvbTuner::Action(void)
   fe_status_t Status = (fe_status_t)0;
   while (Running()) {
         fe_status_t NewStatus;
-        if (GetFrontendStatus(NewStatus, 10))
+        if (GetFrontendStatus(NewStatus, tunerStatus != tsTuned ? 10 : tuneTimeout))
            Status = NewStatus;
         cMutexLock MutexLock(&mutex);
         switch (tunerStatus) {
@@ -405,95 +429,86 @@ void cDvbTuner::Action(void)
 }
 //M7X0 BEGIN AK
 //
-#define REPLAY_VPID 0x101
-#define REPLAY_APID 0x102
-#define INITIAL_TS_BUFFER_SIZE 2256
-#define INITIAL_TRICK_SPEED_BUFFER_SIZE 524288
+//#define REPLAY_WRITE_WAITTIME 100
+// #define REPLAY_FASTPLAY_FRAME_WAITTIME 40
+#define PACKHEADERCOUNTERMASK 0x7f
+#define INITIAL_TRICKSPEED_BUFFER_SIZE KILOBYTE(256)
+#define REPLAY_MAX_UNUSABLE_DATA KILOBYTE(512)
+#define REPLAY_TIMEOUT 3
 class c7x0Replayer {
 private:
-  cMutex playerMutex;
+  FILE *testWriter;
   cDvbDevice *dvbDevice;
-  int fd_video;
-  int fd_audio;
-  
-  int cardIndex;
   int fd_dvr;
   int fd_dmx_video;
   int fd_dmx_audio;
-  
-  int audioChannelId;
-  
-  // TS Buffers
-  // For Normal Play: holds TS-Packets build of one PES-Packet
-  uchar *tsBuffer;
-  int tsBufferSize;
-  int tsBufferLength;
-  int tsBufferPayloadFree;
 
-  // Trick Speed Buffer:
-  uchar *trickSpeedBuffer;
-  int trickSpeedBufferSize;
-  int trickSpeedBufferLength;
-
-  int trickSpeedBufferWriteLength;
-  int trickSpeedWriteTimes;
-
-  int videoPesHeaderLength;
-  int videoStartcode;
+  int videoStreamId;
   int mpeg;
-  bool trickSpeedSynced;
-  bool mpeg1HeaderDone;
+  bool initialized;
 
-  int vccount;
-  int account;
-  bool inFastplay;
-  bool inSlowmotion;
-
-  int pesLength;
-  int pesExpectedLength;
-  int pesStartcode;
-  int skipPesBytes;
-  int pesSyncSkiped;
-
-  bool pre_1_3_19_PrivStr;
-  uchar privateStreamPesHeader[255 + 3 + 1];
-  int privateStreamPesHeaderLength;
+  eTrackType curAudioTrack;
+  int curAudioStreamId;
   int privateStreamId;
+  bool pre_1_3_19_PrivStr;
 
-//M7X0TODO
-/*
-This maybe need for Calling Audios.PlayAudio().
-But m7x0 can't play external anyway so leave it
-		uchar* pesAudioBuffer;
-		int pesAudioBufferLength;
-	   int pesAudioBufferSize;
-*/
 
-  bool ReallocTsBuffer (const int Size); 
-  bool ReallocTrickSpeedBuffer (int Size); 
+  uchar fragmentData[6 + 65536];
+  int fragmentLen;
 
-  void ResetAll();
-  void Reset();
+  int packetLength;
+  int packetSkipBytes;
+  int streamId;
+  uint32_t packetScanner;
 
-  bool SearchForStartcode(const uchar *&Data, int &Length);
-  bool StartTsPacket(const int pid, int &ccounter);
-  bool CopyPes2Ts(const uchar *&Data, int &Length, const int pid, int &ccounter);
-  bool CheckPrivateStreamId(const uchar *&Data, int &Length);
-  
-  bool CopyVideo2TrickSpeed(const uchar *&Data, int &Length);
-  void CheckAudioChannel();
-  void DiscardLastInCache();
+  static const uchar packHeaderMpeg1[12];
+  static const uchar packHeaderMpeg2[14];
+  uchar packHeader[14];
+  int packHeaderLen;
+  int packetCounter;
+  bool packHeaderInStream;
 
-  int WriteData();
+  int skippedBytes;
+  int unusableDataCount;
+  time_t lastPlaytime;
 
-  void openDvr();
-  void closeDvr();
+  uchar *trickspeedData;
+  int trickspeedLen;
+  int trickspeedSize;
+  bool inTrickspeed;
+  enum {
+       syncing,
+       findFrame,
+       scanFrame
+       } trickspeedState;
+  uint32_t trickspeedScanner;
 
-  
-//  FILE *test_writer;
+#ifdef M7X0_PLAY_TS
+  int audio_ccounter;
+  int video_ccounter;
+  uchar tsHeader[188];
+  uchar tsBuffer[188 * ((6 + 65536 + 183) / 184)]; // Maximum ts length for one pes-packet
+#endif
+  bool ReallocTrickspeedBuffer(const int Size);
+  bool ScanDataTrickspeed(const uchar *&Data, const uchar *Limit);
+  void OpenDvr(void);
+  void CloseDvr(void);
+  void CheckAndSetupAudio(void);
+  bool ScanDataForPacketStartCode(const uchar *&Data,const uchar *const Limit);
+  bool HandlePackHeader(const uchar *&Data,const uchar *const Limit);
+  bool Initialize(const uchar *&Data,const uchar *const Limit);
+  int HandleTrickspeed(const uchar *Data, const uchar *packetLimit);
+  bool CheckPrivateStreamHeader(const uchar *Data, const uchar *const Limit);
+  bool CheckTimeout(void);
+#ifdef M7X0_PLAY_TS
+  int WriteOutPacket(const uchar *Data, int Count,int Pid, int *CCounter);
+#else
+  int WriteOutPacket(const uchar *Data, int Count);
+#endif
 
-public: 
-  c7x0Replayer(cDvbDevice *dev, int fdVid,int fdAud, int cardI);
+public:
+  void Reset(void);
+  c7x0Replayer(cDvbDevice *dev);
   ~c7x0Replayer();
   int PlayPes(const uchar *Data, int Length, const bool VideoOnly);
   void TrickSpeed(const int Speed,const bool UseFastForward);
@@ -504,730 +519,2709 @@ public:
   bool Flush(const int TimeoutMs);
   };
 
-c7x0Replayer::c7x0Replayer(cDvbDevice *dev, int fdVid, int fdAud, int cardI)
+const uchar c7x0Replayer::packHeaderMpeg1[12] =  {
+     0x00, 0x00, 0x01, 0xBA, 0x21, 0x00, 0x01, 0x00, 0x01, 0x81, 0x24, 0xF9
+  };
+const uchar c7x0Replayer::packHeaderMpeg2[14] =  {
+     0x00, 0x00, 0x01, 0xBA, 0x44, 0x00, 0x04, 0x00, 0x04, 0x01, 0x02, 0x49, 0xF3, 0xF8
+  };
+
+void c7x0Replayer::Reset(void)
+{
+  CloseDvr();
+
+  initialized = false;
+  videoStreamId = 0;
+  mpeg = 0;
+
+  curAudioTrack = ttNone;
+  curAudioStreamId = 0;
+  privateStreamId = 0;
+  pre_1_3_19_PrivStr = false;
+
+  fragmentLen = 0;
+  packetScanner = 0xFFFFFFFF;
+  skippedBytes = 0;
+  packetLength = 0;
+  packetSkipBytes = 0;
+  streamId = 0;
+
+  unusableDataCount = 0;
+
+  packHeaderLen = 0;
+  packetCounter = 0;
+  packHeaderInStream = false;
+
+  trickspeedScanner = 0xFFFFFFFF;
+  inTrickspeed = false;
+  trickspeedState = syncing;
+  trickspeedLen = 0;
+  dvbDevice->ClrAvailableTracks();
+}
+
+c7x0Replayer::c7x0Replayer(cDvbDevice *dev)
 {
   dvbDevice = dev;
-  fd_video = fdVid;
-  fd_audio = fdAud;
-  cardIndex = cardI;
-  ResetAll();
-
-//  test_writer = fopen("/pc2/tests/video_es_test.m2v","w");
-
-  tsBuffer = MALLOC(uchar, INITIAL_TS_BUFFER_SIZE);
-  tsBufferSize = INITIAL_TS_BUFFER_SIZE;
-  tsBufferLength = 0;
-  tsBufferPayloadFree = 0;
-
-  if (!tsBuffer) {
-     tsBufferSize = 0;
-     }
-
-  trickSpeedBuffer = MALLOC(uchar, INITIAL_TRICK_SPEED_BUFFER_SIZE);
-  trickSpeedBufferSize = INITIAL_TRICK_SPEED_BUFFER_SIZE;
-  trickSpeedBufferLength = 0;
-
-  if (!trickSpeedBuffer) {
-     trickSpeedBufferSize = 0;
-     }
-
-  trickSpeedWriteTimes = 1;
-
-  vccount = 0;
-  account = 0;
-  inFastplay = false;
-  inSlowmotion = false;
-
-  pre_1_3_19_PrivStr = false;
   fd_dvr = -1;
-  audioChannelId=-1;
-  openDvr();
+  Reset();
+  trickspeedSize = 0;
+  trickspeedData = NULL;
+  ReallocTrickspeedBuffer(INITIAL_TRICKSPEED_BUFFER_SIZE);
+#ifdef M7X0_PLAY_TS
+  tsHeader[0] = 0x47;
+  tsHeader[1] = 0;
+  tsHeader[2] = 0;
+  tsHeader[3] = 0;
+  unsigned int *p = (unsigned int *) tsHeader;
+  p++;
+  for (int i = 0; i < 46; i++, p++)
+      *p = 0xFFFFFFFF;
+  tsHeader[4] = 0;
+  tsHeader[5] = 0;
+#endif
+  //testWriter = fopen("/pc2/tests/trickSpeedTest.m2v","w");
 }
 
 c7x0Replayer::~c7x0Replayer()
 {
- 
-//  fclose(test_writer);
-  closeDvr();
-  free(tsBuffer);
-  free(trickSpeedBuffer);
+  CloseDvr();
+  free(trickspeedData);
+  //fclose(testWriter);
 }
 
-void c7x0Replayer::openDvr(){
-  if (fd_dvr >= 0)
+bool c7x0Replayer::ReallocTrickspeedBuffer(const int Size)
+{
+  if (Size <= trickspeedSize)
+     return true;
+
+  uchar *tmp = (uchar *) realloc(trickspeedData,Size);
+  if (!tmp) {
+     esyslog("m7x0 Replayer cannot alloc memory!");
+     return false;
+     }
+
+  trickspeedSize=Size;
+  trickspeedData=tmp;
+  return true;
+}
+
+void c7x0Replayer::OpenDvr(void)
+{
+  if (fd_dvr >= 0 || !initialized)
      return;
 
-  fd_dvr = DvbOpen(DEV_DVB_ADAPTER DEV_DVB_DVR, cardIndex, O_WRONLY, true);
+  packetCounter = 0;
+
+  // None-Blocking-Mode not working as expected
+  fd_dvr = DvbOpen(DEV_DVB_ADAPTER DEV_DVB_DVR, 0, O_WRONLY, true);
+
 
   if (fd_dvr <0 )
      return;
-  
-  dmx_pes_filter_params pesFilterParams;
-  memset(&pesFilterParams, 0, sizeof(pesFilterParams));
-  fd_dmx_video = DvbOpen(DEV_DVB_ADAPTER DEV_DVB_DEMUX, cardIndex, O_RDWR | O_NONBLOCK, true); 
+#ifndef M7X0_PLAY_TS
+  CHECK(ioctl(fd_dvr,DVR_SET_STREAM_TYPE,mpeg == 2 ? DVR_MPEG2_PS : DVR_MPEG1));
+#else
+  CHECK(ioctl(fd_dvr,DVR_SET_STREAM_TYPE, DVR_MPEG2_TS));
+#endif
 
-  if (fd_dmx_video < 0) {
-     close(fd_dvr);
-     fd_dvr = -1;
-     return;
+  fd_dmx_video = -1;
+  if (dvbDevice->playMode == pmAudioVideo || dvbDevice->playMode == pmVideoOnly) {
+     dmx_pes_filter_params pesFilterParams;
+     memset(&pesFilterParams, 0, sizeof(pesFilterParams));
+     fd_dmx_video = DvbOpen(DEV_DVB_ADAPTER DEV_DVB_DEMUX, 0, O_RDWR | O_NONBLOCK, true);
+
+     if (fd_dmx_video < 0) {
+        close(fd_dvr);
+        fd_dvr = -1;
+        return;
      }
 
-  pesFilterParams.pid      = REPLAY_VPID;
-  pesFilterParams.input    = DMX_IN_DVR;
-  pesFilterParams.output   = DMX_OUT_DECODER;
-  pesFilterParams.pes_type = DMX_PES_VIDEO;
-  pesFilterParams.flags    = DMX_IMMEDIATE_START;
+     // Uglly the driver needs setting exacty this Value
+     // Yet another BUG in m7x0-drivers
+     CHECK(ioctl(fd_dmx_video, DMX_SET_BUFFER_SIZE,0x100000));
+#ifdef M7X0_PLAY_TS
+     pesFilterParams.pid      = 0xE0;
+     video_ccounter           = 0;
+#else
+     pesFilterParams.pid      = videoStreamId;
+#endif
+     pesFilterParams.input    = DMX_IN_DVR;
+     pesFilterParams.output   = DMX_OUT_DECODER0;
+     pesFilterParams.pes_type = DMX_PES_VIDEO;
+     pesFilterParams.flags    = DMX_IMMEDIATE_START;
 
-  int r, i = 0, errnoSave;
+     int r, i = 0, errnoSave;
 
-  // Is this loop really nessesary any more.
-  // In earllier Versions the driver returns with EBUSY sometimes
-  do {
-     if ((r = ioctl(fd_dmx_video, DMX_SET_PES_FILTER, &pesFilterParams)) < 0) {
-        errnoSave = errno;
-        CHECK(r);
-        cCondWait::SleepMs(3);
-        } 
-     else
-        errnoSave = 0;
-     i++;
-     } while (errnoSave == EBUSY && i <= 100);
+     // Is this loop really nessesary any more.
+     // In earllier Versions the driver returns with EBUSY sometimes
+     do {
+#ifdef M7X0_PLAY_TS
+        if ((r = ioctl(fd_dmx_video,DMX_SET_PES_FILTER, &pesFilterParams)) < 0) {
+#else
+        if ((r = ioctl(fd_dmx_video,DMX_SET_PS_MODE_FILTER, &pesFilterParams)) < 0) {
+#endif
+           errnoSave = errno;
+           CHECK(r);
+           cCondWait::SleepMs(3);
+           }
+        else
+           errnoSave = 0;
+        i++;
+        } while (errnoSave == EBUSY && i <= 100);
 
-  if (errnoSave != 0) {
-     close(fd_dmx_video);
-     close(fd_dvr);
-     fd_dvr = -1;
-     return; 
-     }
-     
-  memset(&pesFilterParams, 0, sizeof(pesFilterParams));
-  fd_dmx_audio = DvbOpen(DEV_DVB_ADAPTER DEV_DVB_DEMUX, cardIndex, O_RDWR | O_NONBLOCK, true); 
-
-  if (fd_dmx_audio < 0) {
-     close(fd_dmx_video);
-     close(fd_dvr);
-     fd_dvr = -1;
-     return;
-     }
-     
-  // Uglly the driver needs setting exacty this Value
-  // Yet another BUG in m7x0-drivers
-  if ((r = ioctl(fd_dmx_audio, DMX_SET_BUFFER_SIZE,0x1e000)) < 0) { 
-     CHECK(r);
-     close(fd_dmx_audio);
-     close(fd_dmx_video);
-     close(fd_dvr);
-     fd_dvr = -1;
-     return; 
+     if (errnoSave != 0) {
+        close(fd_dmx_video);
+        close(fd_dvr);
+        fd_dvr = -1;
+        return;
+        }
      }
 
-  pesFilterParams.pid      = REPLAY_APID;
-  pesFilterParams.input    = DMX_IN_DVR;
-  pesFilterParams.output   = DMX_OUT_DECODER;
-  pesFilterParams.pes_type = DMX_PES_AUDIO;
-  pesFilterParams.flags    = DMX_IMMEDIATE_START;
+  CHECK(ioctl(dvbDevice->fd_audio,AUDIO_SET_AV_SYNC,dvbDevice->playMode == pmAudioVideo));
+  // CHECK(ioctl(dvbDevice->fd_audio,AUDIO_SET_AV_SYNC,0));
+  if (dvbDevice->playMode == pmAudioVideo || dvbDevice->playMode == pmVideoOnly)
+     CHECK(ioctl(dvbDevice->fd_video,VIDEO_PLAY,0));
+  fd_dmx_audio = -1;
+  curAudioTrack = ttNone;
+  CheckAndSetupAudio();
+  lastPlaytime = time(NULL);
+}
 
-  // Is this loop really nessesary any more.
-  // In earllier Versions the driver returns with EBUSY sometimes
-  do {
-     if ((r = ioctl(fd_dmx_audio, DMX_SET_PES_FILTER, &pesFilterParams)) < 0) {
-        errnoSave = errno;
-        CHECK(r);
-        cCondWait::SleepMs(3);
-        } 
-     else
-        errnoSave = 0;
-     i++;
-     } while (errnoSave == EBUSY && i <= 100);
+void c7x0Replayer::CheckAndSetupAudio(void)
+{
+  eTrackType newAudioTrack = dvbDevice->GetCurrentAudioTrack();
+  if (newAudioTrack != curAudioTrack && newAudioTrack != ttNone && initialized && dvbDevice->playMode != pmVideoOnly) {
+     curAudioStreamId = dvbDevice->GetTrack(newAudioTrack)->id;
+     if (fd_dmx_audio >= 0) {
+        CHECK(ioctl(fd_dmx_audio, DMX_STOP,1));
+        CHECK(ioctl(dvbDevice->fd_audio,AUDIO_STOP,0));
+        }
+     else {
+        fd_dmx_audio = DvbOpen(DEV_DVB_ADAPTER DEV_DVB_DEMUX, 0, O_RDWR | O_NONBLOCK, true);
+        if (fd_dmx_audio < 0) {
+           //close(fd_dmx_video);
+           //close(fd_dvr);
+           //fd_dvr = -1;
+           return;
+           }
+        }
 
-  if (errnoSave != 0) {
-     close(fd_dmx_audio);
-     close(fd_dmx_video);
-     close(fd_dvr);
-     fd_dvr = -1;
+     dmx_pes_filter_params pesFilterParams;
+     memset(&pesFilterParams, 0, sizeof(pesFilterParams));
+     CHECK(ioctl(fd_dmx_audio, DMX_SET_BUFFER_SIZE,0x1E000));
+     pesFilterParams.input    = DMX_IN_DVR;
+     pesFilterParams.pes_type = DMX_PES_AUDIO;
+     pesFilterParams.flags    = DMX_IMMEDIATE_START;
+
+#ifdef M7X0_PLAY_TS
+     pesFilterParams.pid = curAudioStreamId;
+     audio_ccounter = 0;
+#endif
+
+     if (IS_DOLBY_TRACK(newAudioTrack)) {
+#ifndef M7X0_PLAY_TS
+        pesFilterParams.pid      = 0xBD;
+#endif
+        pesFilterParams.output   = DMX_OUT_DECODER1;
+        }
+     else {
+#ifndef M7X0_PLAY_TS
+        int audioType = curAudioStreamId & 0xF0;
+        pesFilterParams.pid      = (audioType == 0xC0 || audioType == 0xD0) ? curAudioStreamId : 0xBD;
+#endif
+        pesFilterParams.output   = DMX_OUT_DECODER0;
+        }
+
+      int r, i = 0, errnoSave;
+
+     // Is this loop really nessesary any more.
+     // In earllier Versions the driver returns with EBUSY sometimes
+     do {
+#ifdef M7X0_PLAY_TS
+        if ((r = ioctl(fd_dmx_audio, DMX_SET_PES_FILTER, &pesFilterParams)) < 0) {
+#else
+        if ((r = ioctl(fd_dmx_audio, DMX_SET_PS_MODE_FILTER, &pesFilterParams)) < 0) {
+#endif
+           errnoSave = errno;
+           CHECK(r);
+           cCondWait::SleepMs(3);
+           }
+        else
+           errnoSave = 0;
+        i++;
+        } while (errnoSave == EBUSY && i <= 100);
+
+     if (errnoSave != 0) {
+        close(fd_dmx_audio);
+        //close(fd_dmx_video);
+        //close(fd_dvr);
+        //fd_dvr = -1;
+        return;
+        }
+     CHECK(ioctl(dvbDevice->fd_audio,AUDIO_PLAY,0));
+     curAudioTrack = newAudioTrack;
      }
 }
 
-void c7x0Replayer::closeDvr()
+void c7x0Replayer::CloseDvr()
 {
   if (fd_dvr < 0)
      return;
-     
-  CHECK(ioctl(fd_dmx_audio, DMX_STOP,1));
-  close(fd_dmx_audio);
-  CHECK(ioctl(fd_dmx_video, DMX_STOP,1));
-  close(fd_dmx_video);
+
+  if (fd_dmx_audio >= 0) {
+     CHECK(ioctl(fd_dmx_audio, DMX_STOP,1));
+     close(fd_dmx_audio);
+     fd_dmx_audio = -1;
+     curAudioTrack = ttNone;
+     }
+
+  if (fd_dmx_video >= 0) {
+     CHECK(ioctl(fd_dmx_video, DMX_STOP,1));
+     close(fd_dmx_video);
+     fd_dmx_video = -1;
+     }
   close(fd_dvr);
   fd_dvr = -1;
+  if (dvbDevice->playMode != pmVideoOnly)
+     CHECK(ioctl(dvbDevice->fd_audio, AUDIO_STOP, 0))
+  if (dvbDevice->playMode == pmAudioVideo || dvbDevice->playMode == pmVideoOnly)
+     CHECK(ioctl(dvbDevice->fd_video, VIDEO_STOP, 0));
 }
 
-bool c7x0Replayer::ReallocTsBuffer(const int Size)
+bool c7x0Replayer::ScanDataForPacketStartCode(const uchar *&Data,const uchar *const Limit)
 {
-  if (Size <= tsBufferSize) 
-     return true;
+  register const uchar *data = Data;
+  register const uchar *const limit = Limit -1;
 
-  uchar *tmp = (uchar *) realloc(tsBuffer,Size);
-  if (!tmp) {
-     esyslog("m7x0 Replayer cannot alloc memory!");
+  // Normal case - No need to sync
+  // I think this hit in 99% of cases.
+  if (limit - data >= 3 && !(data[0] | data[1]) && data[2] == 1 && data[3] >= 0xBA && data[3] <= 0xEF) {
+     packetScanner = 0xFFFFFFFF;
+     packetLength = 0;
+     streamId = data[3];
+     fragmentLen = 0;
+     return true;
+     }
+
+  if ((packetScanner & 0xFFFFFF) == 0x000001 && data[0] >= 0xBA && data[0] <= 0xEF) {
+     packetScanner = 0xFFFFFFFF;
+     packetLength = 0;
+     streamId = data[0];
+     fragmentLen = 3;
+     fragmentData[0] = 0;
+     fragmentData[1] = 0;
+     fragmentData[2] = 1;
+     skippedBytes -= 3;
+     return true;
+     }
+
+  packetScanner = (packetScanner << 8) | data[0];
+  data++;
+  if (data > limit) {
+     skippedBytes++;
      return false;
      }
 
-  tsBufferSize=Size;
-  tsBuffer=tmp;
+
+  if ((packetScanner & 0xFFFFFF) == 0x000001 && data[0] >= 0xBA && data[0] <= 0xEF) {
+     packetScanner = 0xFFFFFFFF;
+     packetLength = 0;
+     streamId = data[0];
+     fragmentLen = 2;
+     fragmentData[0] = 0;
+     fragmentData[1] = 0;
+     skippedBytes -= 2;
+     return true;
+     }
+
+  packetScanner = (packetScanner << 8) | data[0];
+  data++;
+  if (data > limit) {
+     skippedBytes += 2;
+     return false;
+     }
+
+
+  if ((packetScanner & 0xFFFFFF) == 0x000001 && data[0] >= 0xBA && data[0] <= 0xEF) {
+     packetScanner = 0xFFFFFFFF;
+     packetLength = 0;
+     streamId = data[0];
+     fragmentLen = 1;
+     fragmentData[0] = 0;
+     skippedBytes --;
+     return true;
+     }
+
+  packetScanner = (packetScanner << 8) | data[0];
+  if (data >= limit) {
+     skippedBytes += 3;
+     return false;
+     }
+
+   while (data < limit)
+        if (data[0] > 1)
+           data += 3;
+        else if (!data[0])
+           data++;
+        else {
+           if (!(data[-2] | data[-1])) {
+              register const uchar code = *++data;
+              if (code >= 0xBA && code <= 0xEF) {
+                 packetScanner = 0xFFFFFFFF;
+                 packetLength = 0;
+                 streamId = code;
+                 fragmentLen = 0;
+                 skippedBytes += data - 3 - Data;
+                 Data = data - 3;
+                 return true;
+                 }
+              }
+           data += 3;
+           }
+
+  packetScanner = getIntUnalignedBE(limit - 3);
+  skippedBytes += limit + 1 - Data;
+  return false;
+}
+
+bool c7x0Replayer::HandlePackHeader(const uchar *&Data,const uchar *const Limit)
+{
+  const uchar *data = Data;
+
+  if (!mpeg) {
+     int offset = 4 - fragmentLen;
+     int marker;
+
+     if (offset < 0)
+        marker = fragmentData[4] & 0xC0;
+     else if (offset < Limit - data)
+        marker = data[offset] & 0xC0;
+     else
+       return false;
+
+     if (marker)
+        mpeg = 2;
+     else
+        mpeg = 1;
+     }
+
+  if (mpeg == 1)
+     packHeaderLen = 12;
+  else
+     packHeaderLen = 14;
+
+  if (packHeaderLen > fragmentLen + (Limit - data))
+     return false;
+
+  if (fragmentLen)
+     memcpy(packHeader, fragmentData, fragmentLen);
+
+  memcpy(packHeader + fragmentLen, data, packHeaderLen - fragmentLen);
+  data += packHeaderLen -fragmentLen;
+  fragmentLen = 0;
+  streamId = 0;
+
+  if (mpeg == 2) {
+     data += packHeader[13] & 0x7; // Stuffing length
+     packHeader[13] = packHeader[13] & 0xF8;
+     }
+
+  Data = data;
+  packHeaderInStream = true;
   return true;
 }
 
-bool c7x0Replayer::ReallocTrickSpeedBuffer(const int Size)
+bool c7x0Replayer::Initialize(const uchar *&Data,const uchar *const Limit)
 {
-  if (Size <= trickSpeedBufferSize) 
-     return true;
-
-  uchar *tmp = (uchar *) realloc(trickSpeedBuffer,Size);
-  if (!tmp) {
-     esyslog("m7x0 Replayer cannot alloc memory!");
-     return false;
+  const uchar *data = Data;
+  if ((streamId & 0xF0) == 0xE0) {
+     videoStreamId = streamId;
      }
 
-  trickSpeedBufferSize=Size;
-  trickSpeedBuffer=tmp;
-  return true;
-}
-
-void c7x0Replayer::ResetAll()
-{
-  Reset();
-  videoStartcode = 0xFFFFFFFF; 
-  trickSpeedBufferLength = 0;
-  trickSpeedSynced = false;
-  trickSpeedBufferWriteLength = 0;
-  skipPesBytes = 0;
-  pesSyncSkiped = 0;
-}
-
-void c7x0Replayer::Reset()
-{
-  tsBufferLength = 0;
-  tsBufferPayloadFree = 0;
-  pesLength = 0;
-  pesExpectedLength = 0;
-  pesStartcode = 0xffffffff;
-  privateStreamPesHeaderLength = 0;
-  privateStreamId = -1;
-
-}
-
-bool c7x0Replayer::SearchForStartcode(const uchar *&Data, int &Length)
-{
-  if (pesLength >= 6)
-     return true;
-     
-  
-  for (; Length > 0 && ((pesStartcode&0xffffff00) != 0x100 || 
-                        (pesStartcode&0xff) < 0xbb || 
-                        (pesStartcode&0xff) > 0xef);
-         Length--, Data++, pesSyncSkiped++) 
-      pesStartcode = (pesStartcode<<8) | (*Data);
-
-  if ((pesStartcode&0xffffff00) != 0x100 || 
-      (pesStartcode&0xff) < 0xbb || (pesStartcode&0xff) > 0xef) {
-     pesLength=0;
-     return false;
+  if (fragmentLen + (Limit - data) >= 7) {
+     int offset = 6 - fragmentLen;
+     mpeg = (data[offset] & 0xC0) == 0x80 ? 2 : 1;
      }
-     
-  if (pesSyncSkiped>4)
-        esyslog("m7x0 Replayer: skiped %d Bytes to sync on PES-Packet",pesSyncSkiped-4);
-        
-  pesSyncSkiped = 0;
-  if (pesLength==0)
-     pesLength=4;
 
-  for (; Length > 0 && pesLength < 6; pesLength++, Data++, Length--)
-      pesExpectedLength= (pesExpectedLength<<8) | (*Data);
+  initialized = (mpeg &&  (videoStreamId ||
+              (dvbDevice->playMode != pmAudioVideo && dvbDevice->playMode != pmVideoOnly)));
 
-  return pesLength >= 6;
-}
-
-bool c7x0Replayer::StartTsPacket(const int pid, int &ccounter)
-{
-  if (tsBufferPayloadFree) // Payload free in Packet. 
-     return true;
-
-  if (!ReallocTsBuffer(tsBufferLength + 188)) 
-     return false;
-     
-  
-  *( (uint32_t*) (tsBuffer + tsBufferLength) ) = 0x47000010 | ((pid&0x1fff)<<8) | (ccounter&0xf);
-  ccounter=(ccounter+1)&0xf;
-
-
-  
-  if (pesLength > 6) // PES Packet starts? 
-     tsBufferPayloadFree = min(184, pesExpectedLength + 6 - pesLength);
-  else {
-     tsBufferPayloadFree = min(184, pesExpectedLength + 6);
-     tsBuffer[tsBufferLength + 1] |= 0x40;
-     }
-     
-  tsBufferLength += 4; // Skip TS-Packet Header
-  
-  if (tsBufferPayloadFree < 184) { // Does PES-Packet fill the whole TS-Pack?
-     // Set adaption field present for padding
-     tsBuffer[tsBufferLength-1] |= 0x20; 
-
-     // Length of adaption field (0 is allowed for 1 Byte padding)
-     tsBuffer[tsBufferLength] = 183 - tsBufferPayloadFree;  
-  
-     // No info in adaption field, cause we are padding only. 
-     // Gets overwritten in case of 1 Byte padding.
-     tsBuffer[tsBufferLength+1] = 0;
-                                  
-     // Do we need to pad more than 2 Bytes? In this case we have to fill 
-     // the rest with 0xff
-     if (tsBufferPayloadFree < 182)  
-        memset(tsBuffer + tsBufferLength + 2, 0xff, 182 - tsBufferPayloadFree);
-
-     tsBufferLength += 184 - tsBufferPayloadFree; // Skip Padding 
-     }
-  
-  if (pesLength == 6) {
-     *( (uint32_t*) (tsBuffer + tsBufferLength) ) = pesStartcode;
-     *( (uint16_t*) (tsBuffer + tsBufferLength + 4) ) =  (uint16_t) pesExpectedLength;
-        
-     tsBufferLength += 6;
-     tsBufferPayloadFree -= 6;
-     }
-     
-  return true;
-}
-
-bool c7x0Replayer::CopyPes2Ts (const uchar *&Data, int &Length, const int pid, int &ccounter)
-{
-  int copyLength;
-  
-  while (Length > 0 && pesLength < pesExpectedLength + 6) {
-        if (!StartTsPacket(pid, ccounter))
-           return false;
-        
-        copyLength = min(tsBufferPayloadFree, Length);
-        memcpy(tsBuffer + tsBufferLength, Data, copyLength);
-        
-        tsBufferLength += copyLength;
-        tsBufferPayloadFree -= copyLength;
-        pesLength += copyLength;
-        Data += copyLength;
-        Length -= copyLength;
+  if (!initialized) {
+     if (mpeg) {
+        data += packetLength - fragmentLen;
+        unusableDataCount += packetLength - fragmentLen;
+        fragmentLen = 0;
+        streamId = 0;
+        Data = data;
+        return true;
         }
-        
-  return true;        
+
+     unusableDataCount += Limit - data;
+     return false;
+     }
+
+  if (!packHeaderInStream)
+     if (mpeg == 1) {
+        memcpy(packHeader, packHeaderMpeg1, 12);
+        packHeaderLen = 12;
+        }
+     else {
+        memcpy (packHeader,packHeaderMpeg2,14);
+        packHeaderLen = 14;
+        }
+
+  packetCounter = 0;
+
+  if (!inTrickspeed)
+     OpenDvr();
+  return true;
 }
 
-bool c7x0Replayer::CheckPrivateStreamId(const uchar *&Data, int &Length)
+bool c7x0Replayer::ScanDataTrickspeed(const uchar *&Data, const uchar *Limit)
+{
+  register const uchar *data = Data;
+  register const uchar *limit = Limit - 1;
+
+  while (data < limit)
+        if (data[0] > 1)
+           data += 3;
+        else if (!data[0])
+           data++;
+        else {
+           if (!(data[-2] | data[-1])) {
+              register const uchar code = *++data;
+              if (code == 0 || code == 0xB3 || code == 0xB8) {
+                 Data = data;
+                 return true;
+                 }
+              }
+           data += 3;
+           }
+
+  return false;
+}
+
+int c7x0Replayer::HandleTrickspeed(const uchar *Data, const uchar *packetLimit)
+{
+  // Always a full packet should be present in Data.
+  const uchar *data = Data;
+  const uchar *limit = packetLimit;
+
+  if (mpeg == 2) {
+     data += 8;
+
+     if (data >= limit) {  // This should never happen packet is illegal
+        errno = EINVAL;    // Which error value should be set???
+        return -1;
+        }
+
+     data += data[0] + 1;
+
+     if (data >= limit) {  // Packet with no payload should normaly not happen
+        return 0;          // but allowed
+        }
+     }
+  else { //Mpeg1
+     data += 6;
+     if (data >= limit) {  // This should never happen packet is illegal
+        errno = EINVAL;    // Which error value should be set???
+        return -1;
+        }
+
+     // Stuffing Bytes
+     while (data < limit && data[0] == 0xFF )
+            data++;
+
+     if (data >= limit) {  // This should never happen packet is illegal
+        errno = EINVAL;    // Which error value should be set???
+        return -1;
+        }
+
+     if ((data[0] & 0xC0) == 0x40)
+         data += 2;
+
+     if (data >= limit) {  // This should never happen packet is illegal
+        errno = EINVAL;    // Which error value should be set???
+        return -1;
+        }
+
+     if ((data[0] & 0xF0) == 0x20) {
+        data += 5;
+        }
+     else if ((data[0] & 0xF0) == 0x30) {
+        data += 10;
+        }
+     else {
+        data++;
+        }
+
+     if (data >= limit) {  // Packet with no payload should normaly not happen
+        return 0;          // but allowed
+        }
+     }
+
+  // Driver expects an elementary video stream written to /dev/ost/video0
+  // while in trickspeed.
+  // At this point we would normally sync to a sequence header and
+  // write out the data from data until limit. Pes-header is stripped up
+  // above, the rest is video elementary data.
+  // But hey as always there are a number of bugs in this part of the driver:
+  // 1. Don't like writing startcodes aligned to start of buffer
+  //   (isn't it funny - this is the easiest case)
+  // 2. Don't like startcode a spilted over writes.
+  // There are some others which I not yet was able to trace down.
+  // Some parts of the video get replayed even if we are miles away for that
+  // point. Seems so as if some frames get not played right.
+  // The part below tries to workaround these issues.
+  // As always let me write a hint:
+  // IF YOU ARE IN CHARGE OF THE DRIVER SOURCE FIX THIS HORRIBLE BROKEN THING
+
+  const uchar *data_save = data;
+  const uchar *payload_start = data;
+
+  for (int i = 0; i < 3 && data < limit; i++) {
+      int code = data[0];
+      if ((trickspeedScanner & 0xFFFFFF) == 0x000001) {
+         if (trickspeedState == syncing && code == 0xB3) {
+            putIntUnalignedBE(trickspeedData, 0x00000000); // First two 0: Padding for bug in driver
+            trickspeedData[4] = 1;
+            trickspeedLen = 5;
+            payload_start = data;
+            data += 3 - i;
+            trickspeedState = findFrame;
+            break;
+            }
+         if (trickspeedState == findFrame && !code) {
+            trickspeedState = scanFrame;
+            data += 3 - i;
+            break;
+            }
+         if (trickspeedState == scanFrame && (!code || code == 0xB3 || code == 0xB8)) {
+            trickspeedLen -= 3 - i;
+            int r;
+            if ((r = write(dvbDevice->fd_video, trickspeedData, trickspeedLen)) < 0) {
+               LOG_ERROR;
+               return r;
+               }
+            //fwrite (trickspeedData, trickspeedLen, 1, testWriter);
+            if (r != trickspeedLen) {
+               esyslog("ERROR: Write of trickspeed data stripped off %d bytes",trickspeedLen - r);
+               }
+
+            putIntUnalignedBE(trickspeedData, 0x00000000); // First two 0: Padding for bug in driver
+            trickspeedData[4] = 1;
+            trickspeedLen = 5;
+            payload_start = data;
+            data += 3 - i;
+            if (code) {
+               trickspeedState = findFrame;
+               }
+            break;
+            }
+         }
+      trickspeedScanner = (trickspeedScanner << 8) | code;
+      data++;
+      }
+
+  data--;
+
+  while (ScanDataTrickspeed(data, limit)) {
+        int code = data[0];
+        if (trickspeedState == scanFrame) {
+           int n = data - 3 - payload_start;
+           if (n) {
+              if (!ReallocTrickspeedBuffer(n + trickspeedLen)) {
+                 errno = ENOMEM;
+                 return -1;
+                 }
+              memcpy(trickspeedData + trickspeedLen, payload_start, n);
+              trickspeedLen += n;
+              }
+           int r;
+           if ((r = write(dvbDevice->fd_video, trickspeedData, trickspeedLen)) < 0) {
+              LOG_ERROR;
+              return r;
+              }
+           //fwrite (trickspeedData, trickspeedLen, 1, testWriter);
+           if (r != trickspeedLen) {
+              esyslog("ERROR: Write of trickspeed data stripped off %d bytes",trickspeedLen - r);
+              }
+
+           trickspeedData[0] = 0; // Padding for bug in driver
+           trickspeedData[1] = 0; // Padding for bug in driver
+           trickspeedLen = 2;
+           payload_start = data - 3;
+           data += 3;
+           if (code) {
+              trickspeedState = findFrame;
+              }
+           }
+        else if (trickspeedState == findFrame && !code) {
+           trickspeedState = scanFrame;
+           data += 3;
+           }
+        else if (trickspeedState == syncing && code == 0xB3) {
+           trickspeedData[0] = 0; // Padding for bug in driver
+           trickspeedData[1] = 0; // Padding for bug in driver
+           trickspeedLen = 2;
+           payload_start = data - 3;
+           data += 3;
+           trickspeedState = findFrame;
+           }
+        }
+
+  int n = min (4, limit - data_save);
+  memcpy(&trickspeedScanner, limit - n, n);
+
+  if (trickspeedState == syncing){
+     unusableDataCount += limit - Data;
+     return 0;
+     }
+
+  unusableDataCount = 0;
+  n = limit - payload_start;
+  if (n) {
+     if (!ReallocTrickspeedBuffer(n + trickspeedLen)) {
+        errno = ENOMEM;
+        return -1;
+        }
+     memcpy(trickspeedData + trickspeedLen, payload_start, n);
+     trickspeedLen += n;
+     }
+  return 0;
+}
+
+bool c7x0Replayer::CheckPrivateStreamHeader(const uchar *Data, const uchar *const Limit)
 {
   if (pre_1_3_19_PrivStr){
-     privateStreamPesHeaderLength = 0;
-     privateStreamId = 0xbd;
+     privateStreamId = 0xBD;
      return true;
      }
-     
-  if (privateStreamId != -1)   
+
+  if (privateStreamId)
      return true;
-  
-  int headerBytesNeed;
-  if (privateStreamPesHeaderLength < 3) {
-     if (Length >= 3 - privateStreamPesHeaderLength) 
-        headerBytesNeed = 3 - privateStreamPesHeaderLength +
-                        Data[2-privateStreamPesHeaderLength] + 1;
-     else
-        headerBytesNeed = 3;
+
+  int offset = 8 - fragmentLen;
+  if (offset >= 0) {
+     Data += offset;
+     if (Data >= Limit)
+        return false;
+     Data += 1 + Data[0];
      }
-  else {
-     headerBytesNeed = 3 + privateStreamPesHeader[2] + 1;
-     }
-     
-  int copyBytes = min(headerBytesNeed - privateStreamPesHeaderLength , Length);   
-  
-  memcpy(privateStreamPesHeader + privateStreamPesHeaderLength, Data, copyBytes);
-  Data += copyBytes;
-  Length -= copyBytes;
-  privateStreamPesHeaderLength += copyBytes;
-  
-  if (privateStreamPesHeaderLength < headerBytesNeed) 
+  else
+     Data += offset + fragmentData[8] + 1;
+
+  if (Data >= Limit)
      return false;
-  
-  pesExpectedLength--;
-  privateStreamPesHeaderLength--;
-  privateStreamId = privateStreamPesHeader[privateStreamPesHeaderLength];
-  
+
+  privateStreamId = Data[0];
+
+
   switch (privateStreamId&0xF0) {
-    case 0x20:
+    case 0x20: // SPU
     case 0x30:
-    case 0xA0:
-         return true;
-    case 0x80:
-         dvbDevice->SetAvailableTrack(ttDolby, privateStreamId - 0x80, privateStreamId);
-         return true;
+         break;
+    case 0x80: // AC3 & DTS
+         dvbDevice->SetAvailableTrack(ttDolby, privateStreamId & 0x1F , privateStreamId);
+         break;
+    case 0xA0: // LPCM
+         dvbDevice->SetAvailableTrack(ttAudio, privateStreamId & 0x1F, privateStreamId);
+         break;
     default:
          dsyslog("switching to pre 1.3.19 Dolby Digital compatibility mode");
          dvbDevice->ClrAvailableTracks();
-         dvbDevice->SetAvailableTrack(ttDolby, 0, 0xbd);
-         pesExpectedLength++;
-         privateStreamPesHeaderLength++;
+         dvbDevice->SetAvailableTrack(ttDolby, 0, 0xBD);
          pre_1_3_19_PrivStr = true;
-         return true;
     }
   return true;
 }
 
-
-//M7X0TODO: Find out on which reason Slowmotion sometimes
-// leads to broken frames and short pieces get replayed.
-// Writting  to File leads to nothing: no broken frames in mplayer
-// The errors occurs as bad if written direktly from a elementary stream
-// to device. Setting broken link in GOP-Header leads to nothing.
-// Maybe just another bug in driver or Stream has minimal errors,
-// but mplayer should have shown this.
-bool c7x0Replayer::CopyVideo2TrickSpeed(const uchar *&Data, int &Length)
+bool c7x0Replayer::CheckTimeout(void)
 {
-  if (pesLength == 6) {
-     if ((Data[0]&0xC0) == 0x80) {
-        mpeg = 2;
-        videoPesHeaderLength = 9;
-        }
-     else {
-        mpeg = 1; 
-        mpeg1HeaderDone=false;
-        videoPesHeaderLength = 7;
-        }
-     }
-     
-  int skipBytes;
-  // Skip Header Bytes;
-  if (mpeg == 2) {
-     if (pesLength < 9 && Length >= 9 - pesLength)
-        videoPesHeaderLength += Data[8-pesLength];
-        
-     skipBytes = min(videoPesHeaderLength-pesLength, Length);
-     Data += skipBytes;
-     pesLength += skipBytes;
-     Length -= skipBytes;
-     }    
-  else {
-     while (Length > 0 && pesLength < videoPesHeaderLength  ) {
-                     
-           if (!mpeg1HeaderDone && pesLength + 1 == videoPesHeaderLength ) {
-              if ((Data[0]&0xFF) == 0xFF) // Stuffing Bytes
-                 videoPesHeaderLength++;
-              else if ((Data[0]&0xC0) == 0x40) // STD buffer scale
-                 videoPesHeaderLength += 2;
-              else {
-                 mpeg1HeaderDone = true;
-                 if ((Data[0]&0xF0) == 0x20)  // PTS present
-                    videoPesHeaderLength += 5;
-                 else if ((Data[0]&0xF0) == 0x30) // PTS and DTS present
-                    videoPesHeaderLength += 10;
-                 }
-              }
-              
-           skipBytes = min(videoPesHeaderLength - pesLength - 
-                              (!mpeg1HeaderDone?1:0), Length);       
-           Data += skipBytes;
-           pesLength += skipBytes;
-           Length -= skipBytes;
-           }
-     }
-        
-  if (Length == 0)
-     return true;
-     
-  int copyBytes=0;
-  
-  if (trickSpeedSynced) {  
-     copyBytes = min(pesExpectedLength + 6 - pesLength, Length);
-     if (!ReallocTrickSpeedBuffer(trickSpeedBufferLength + copyBytes))
-        return false;
-        
-     memcpy(trickSpeedBuffer + trickSpeedBufferLength, Data, copyBytes);
-     trickSpeedBufferLength += copyBytes;
-     
-     }
-  
-  // Search for Sequence Header 
-  while (Length > 0 && pesLength < pesExpectedLength + 6 && 
-           videoStartcode != 0x1b3) {
-        videoStartcode = (videoStartcode << 8) | Data[0];   
-        pesLength++;
-        Data++;
-        Length--;
-        }
-        
-  if (videoStartcode != 0x1b3)
-     return true; 
-     
-  copyBytes = min(pesExpectedLength + 6 - pesLength, Length);
-    
-  if (trickSpeedSynced) {
-     trickSpeedBufferWriteLength = trickSpeedBufferLength - copyBytes - 4;
-     Data += copyBytes;
-     pesLength += copyBytes;
-     Length -= copyBytes;
-     videoStartcode = 0xFFFFFFFF;
+  time_t now = time(NULL);
+
+  struct video_status videoStat;
+  if (ioctl(dvbDevice->fd_video, VIDEO_GET_STATUS, &videoStat) >= 0 && videoStat.play_state == VIDEO_PLAYING)
+     lastPlaytime = now;
+  else if (now - lastPlaytime > REPLAY_TIMEOUT) {
+     esyslog("ERROR: Playing timed out!");
+     dsyslog("DEBUG: MPEG %d Video ID 0x%02X Audio ID 0x%02d", mpeg,  videoStreamId, curAudioStreamId);
+     dsyslog("DEBUG: Current Packet: ID 0x%02X (0x%02X) Length %d (%d) "
+             "Pack Header: Source %d Length %d Count %d", streamId,
+             privateStreamId, packetLength, fragmentLen, packHeaderInStream,
+             packHeaderLen, packetCounter);
+
+     errno = EDEADLK;
      return true;
      }
-     
-  trickSpeedSynced = true;
-  
-  if (!ReallocTrickSpeedBuffer(copyBytes + 4))
-     return false;
-     
-  *((uint32_t *)trickSpeedBuffer) = videoStartcode;
-  videoStartcode = 0xFFFFFFFF;
-  memcpy(trickSpeedBuffer + 4, Data, copyBytes);
-  
-  trickSpeedBufferLength = copyBytes + 4;
-  Data += copyBytes;
-  pesLength += copyBytes;
-  Length -= copyBytes;
-  return true;
+  return false;
 }
-
-
-int c7x0Replayer::WriteData()
+#ifdef M7X0_PLAY_TS
+int c7x0Replayer::WriteOutPacket(const uchar *Data, int Count, int Pid, int *CCounter)
 {
-  
-  if (!inFastplay && !inSlowmotion) {
-     if (pesLength < pesExpectedLength + 6)
-        return 0;
-     int r = safe_write(fd_dvr, tsBuffer, tsBufferLength);
-     Reset();
-     return r;
+  int ccounter = *CCounter;
+  tsHeader[1] = 0x40; // Payload Start Flag
+  tsHeader[2] = (Pid & 0xFF);
+
+  int tsBufferLen = 0;
+
+  while (Count >= 184) {
+        tsHeader[3] = 0x10 | (ccounter & 0xF);
+
+        // n * 188  == tsBufferLen => always 4 byte aligned
+        *((int *) (tsBuffer + tsBufferLen)) = *((int *) tsHeader);
+        memcpy(tsBuffer + tsBufferLen + 4, Data, 184);
+
+        Data += 184;
+        Count -= 184;
+        tsBufferLen += 188;
+        ccounter++;
+
+        tsHeader[1] = 0; // Reset Payload Start Flag
+        }
+
+  if (Count) { // Does last TS-Packet needs padding
+     const int tsHeaderLen = 188 - Count;
+     tsHeader[3] = 0x30 | (ccounter & 0xF);
+     tsHeader[4] = tsHeaderLen - 5;
+
+     memcpy(tsBuffer + tsBufferLen, tsHeader, tsHeaderLen);
+     memcpy(tsBuffer + tsBufferLen + tsHeaderLen, Data, Count);
+
+     tsBufferLen += 188;
+     ccounter++;
      }
 
-  if (pesLength == pesExpectedLength + 6)
-     Reset();
-  
-  if (!trickSpeedBufferWriteLength)
-     return 0;   
-  
+   int i = 0;
+   int r;
+   do {
+      if ((r = write(fd_dvr,tsBuffer + i, tsBufferLen - i)) < 0) {
+         if (FATALERRNO) {
+            LOG_ERROR;
+            return r;
+            }
+         }
+      else
+         i += r;
+      } while (i < tsBufferLen);
+
+  *CCounter = ccounter;
+#ifdef USE_PLAYER_WATCHDOG
+  if (CheckTimeout())
+     return -1;
+#endif
+  return 0;
+
+}
+#else
+int c7x0Replayer::WriteOutPacket(const uchar *Data, int Count)
+{
+
+  int r;
   int i;
-  int r = 0;  
-  for (i = 0; i < trickSpeedWriteTimes; i++)
-      if ((r = safe_write(fd_video, trickSpeedBuffer, trickSpeedBufferWriteLength)) < 0)
-         return r;
-         
-  trickSpeedBufferLength -= trickSpeedBufferWriteLength;
-  memcpy(trickSpeedBuffer, trickSpeedBuffer + trickSpeedBufferWriteLength, trickSpeedBufferLength);
 
-  trickSpeedBufferWriteLength=0;
-  return r;
-}
-
-void c7x0Replayer::DiscardLastInCache(){
-  if (inSlowmotion) {
-     trickSpeedBufferLength = 0;
-     if (!trickSpeedSynced)
-        videoStartcode = 0xFFFFFFFF;
+  if ((!packetCounter || packHeaderInStream) && packHeaderLen) {
+     i = 0;
+     while (i < packHeaderLen) {
+            if ((r = write(fd_dvr,packHeader+i,packHeaderLen-i)) < 0) {
+               LOG_ERROR;
+               return r;
+               }
+            i += r;
+            }
+     if (packHeaderInStream)
+        packHeaderLen = 0;
      }
-     
-  if (inFastplay && pesLength > videoPesHeaderLength && pesLength < pesExpectedLength +6) {
-     int dis = min(pesLength - videoPesHeaderLength, trickSpeedBufferLength);
-     trickSpeedBufferLength-=dis;
-     if (trickSpeedBufferLength>=4)
-        videoStartcode = *((uint32_t *) (trickSpeedBuffer + trickSpeedBufferLength - 4));
-     else
-        videoStartcode = 0xFFFFFFFF;
-     }   
-}
 
-void c7x0Replayer::CheckAudioChannel()
-{
-  if (dvbDevice->GetCurrentAudioTrack() != ttNone) {
-     int curAudioId=dvbDevice->GetTrack(dvbDevice->GetCurrentAudioTrack())->id;
-           
-     if (audioChannelId != -1 && curAudioId != audioChannelId) {
-        CHECK(ioctl(fd_audio,AUDIO_STOP));
-        CHECK(ioctl(fd_audio,AUDIO_PLAY));
+  i = 0;
+  while (fragmentLen) {
+        if ((r = write(fd_dvr,fragmentData+i,fragmentLen)) < 0) {
+           LOG_ERROR;
+           return r;
+           }
+        fragmentLen -= r;
+        i += r;
         }
-              
-     audioChannelId = curAudioId;   
-     }
-}
 
+
+  while (Count) {
+        if ((r = write(fd_dvr,Data,Count)) < 0) {
+           LOG_ERROR;
+           return r;
+           }
+        Count -= r;
+        Data += r;
+        }
+
+  packetCounter = (packetCounter + 1) & PACKHEADERCOUNTERMASK;
+#ifdef USE_PLAYER_WATCHDOG
+  if (CheckTimeout())
+     return -1;
+#endif
+  return 0;
+}
+#endif
 int c7x0Replayer::PlayPes(const uchar *Data, int Length, const bool VideoOnly)
 {
-  cMutexLock MutexLock(&playerMutex);
-
   if (!Data) {
      dsyslog("m7x0 Replayer: Discarding last PES-Packet");
-     DiscardLastInCache();
-     skipPesBytes = 0;
-     Reset();
+     fragmentLen = 0;
+     packetSkipBytes = 0;
+     packetScanner = 0xFFFFFFFF;
+     streamId = 0;
+     privateStreamId = 0;
      return 0;
      }
 
-  int length = Length;
-  int i;
-  
-  while (Length > 0) {
-        if (skipPesBytes) {
-           i = min(skipPesBytes, Length);
-           Data += i;
-           Length -= i;
-           skipPesBytes -= i;
+  if (!inTrickspeed)
+     OpenDvr();
+
+  const uchar *data = Data + packetSkipBytes;
+  const uchar *const limit = Data + Length;
+  packetSkipBytes = 0;
+#ifdef M7X0_PLAY_TS
+  int tsPid = 0;
+  int *ccounter = NULL;
+#endif
+  while (data < limit) {
+
+        if (!streamId && !ScanDataForPacketStartCode(data,limit)) {
+           if (skippedBytes > REPLAY_MAX_UNUSABLE_DATA) {
+              esyslog("ERROR: %d bytes of recoding unusable while in initialization - giving up!", unusableDataCount + skippedBytes);
+              errno = EDEADLK; // Any ideas for a better errorcode
+              return -1;
+              }
+           return Length;
+           }
+
+        if (skippedBytes) {
+           esyslog("ERROR: c7x0Replayer skipped %d bytes while syncing on Packet",skippedBytes);
+           unusableDataCount += skippedBytes;
+           skippedBytes = 0;
+           }
+
+        if (streamId == 0xBA) {
+           unusableDataCount = 0;
+           if (HandlePackHeader(data,limit))
+              continue;
+           else
+              break;
+           }
+
+
+        if (!packetLength) {
+           if (fragmentLen + (limit - data)  < 6)
+              break;
+           int offset = 4 - fragmentLen;
+
+           if (offset < 0) {
+              packetLength = fragmentData[4];
+              offset = 0;
+              }
+           else
+              packetLength = data[offset++];
+           packetLength <<= 8;
+           packetLength |= data[offset];
+           packetLength += 6;
+           }
+
+        //dsyslog("Stream %02X Packet-Length %d fragmentLen %d Length %d", streamId, packetLength, fragmentLen, limit - data);
+        if (!initialized) {
+           if (unusableDataCount > REPLAY_MAX_UNUSABLE_DATA) {
+              esyslog("ERROR: %d bytes of recoding unusable while in initialization - giving up!", unusableDataCount);
+              errno = EDEADLK; // Any ideas for a better errorcode
+              return -1;
+              }
+           if (Initialize(data,limit))
+              continue;
+           else
+              break;
+           }
+
+
+        if (inTrickspeed) {
+           if ((streamId&0xF0) == 0xE0) {
+              if (data + packetLength - fragmentLen <= limit) {
+                 int r = 0;
+                 if (!fragmentLen)
+                    r = HandleTrickspeed(data,data + packetLength);
+                 else {
+                    memcpy(fragmentData + fragmentLen, data, packetLength - fragmentLen);
+                    r = HandleTrickspeed(fragmentData,fragmentData + packetLength);
+                    }
+                 data += packetLength - fragmentLen;
+                 fragmentLen = 0;
+                 streamId = 0;
+                 if (r < 0) {
+                    return r;
+                    }
+                 }
+              else
+                 break;
+              }
+           else {
+              unusableDataCount += packetLength - fragmentLen;
+              data += packetLength - fragmentLen;
+              fragmentLen = 0;
+              streamId = 0;
+              }
+           if (unusableDataCount > REPLAY_MAX_UNUSABLE_DATA) {
+              esyslog("ERROR: %d bytes of recoding unusable while in trickspeed - giving up!", unusableDataCount);
+              errno = EDEADLK; // Any ideas for a better errorcode
+              return -1;
+              }
            continue;
            }
 
-        if ((i = WriteData()) < 0)
-           return i;
-           
-        if (!SearchForStartcode(Data,Length) || Length <= 0 ) 
-           return length;
-
-        switch (pesStartcode&0xff) {
-          case 0xbd:
-               if (!Setup.UseDolbyDigital) {
-                  skipPesBytes = pesExpectedLength + 6 -pesLength;
-                  Reset();
-                  break;
-                  }
-                  
-               if (!CheckPrivateStreamId(Data,Length))
-                  return length;
-                  
-               CheckAudioChannel();
-               
-               if (VideoOnly || inFastplay || inSlowmotion ||                   
-                                              audioChannelId != privateStreamId) { 
-                  
-                  skipPesBytes = pesExpectedLength + 6 - pesLength - 
-                                 privateStreamPesHeaderLength;
-                  Reset();
-                  break;
-                  }
-                  
-               if (privateStreamPesHeaderLength){
-                  const uchar *tmp=privateStreamPesHeader;
-                  if (!CopyPes2Ts(tmp, privateStreamPesHeaderLength, REPLAY_APID, account))
-                     return -1;
-                  }
-                  
-               if (!CopyPes2Ts(Data, Length, REPLAY_APID, account))
-                  return -1;   
+        switch (streamId) {
+#ifndef M7X0_PLAY_TS
+          case 0xBB:
+          case 0xBC:
+               unusableDataCount = 0;
                break;
-          case 0xc0 ... 0xdf:
-               dvbDevice->SetAvailableTrack(ttAudio, 
-                 (pesStartcode&0xff) - 0xC0, pesStartcode&0xff);
-                 
-               CheckAudioChannel();
-               
-               if (VideoOnly || inFastplay || inSlowmotion || 
-                    audioChannelId != (pesStartcode&0xff)) {
-                  skipPesBytes = pesExpectedLength + 6 - pesLength;
-                  Reset();
-                  break;
+#endif
+          case 0xBD:
+               unusableDataCount = 0;
+               if (!Setup.UseDolbyDigital || mpeg == 1 || dvbDevice->playMode == pmVideoOnly || VideoOnly) {
+                  data += packetLength - fragmentLen;
+                  fragmentLen = 0;
+                  streamId = 0;
+                  continue;
                   }
-                  
-               if (!CopyPes2Ts(Data, Length, REPLAY_APID, account))
-                  return -1;
 
+               if (!CheckPrivateStreamHeader(data,limit))
+                  break;
+
+               CheckAndSetupAudio();
+
+               if (privateStreamId != curAudioStreamId) {
+                  data += packetLength - fragmentLen;
+                  fragmentLen = 0;
+                  streamId = 0;
+                  privateStreamId = 0;
+                  continue;
+                  }
+
+#ifdef M7X0_PLAY_TS
+               tsPid = privateStreamId;
+               ccounter = &audio_ccounter;
+#endif
                break;
-          case 0xbe: // For MPEG-1 lets see if this work
-               if (inFastplay || inSlowmotion) {
-                  skipPesBytes = pesExpectedLength + 6 - pesLength;
-                  Reset();
-                  break;
-                  }
-          case 0xe0 ... 0xef:
-               if (!inFastplay && !inSlowmotion) {
-                  if (!CopyPes2Ts(Data, Length, REPLAY_VPID, vccount))
-                     return -1;
-                  break;
+          case 0xC0 ... 0xDF:
+               unusableDataCount = 0;
+               if (dvbDevice->playMode == pmVideoOnly || VideoOnly) {
+                  data += packetLength - fragmentLen;
+                  fragmentLen = 0;
+                  streamId = 0;
+                  continue;
                   }
 
-               if (!CopyVideo2TrickSpeed(Data,Length))
-                  return -1;
+               dvbDevice->SetAvailableTrack(ttAudio,streamId - 0xC0, streamId);
+
+               CheckAndSetupAudio();
+
+               if (streamId != curAudioStreamId) {
+                  data += packetLength - fragmentLen;
+                  fragmentLen = 0;
+                  streamId = 0;
+                  continue;
+                  }
+
+#ifdef M7X0_PLAY_TS
+               tsPid = streamId;
+               ccounter = &audio_ccounter;
+#endif
+               break;
+          case 0xBE:
+          case 0xE0 ... 0xEF:
+               unusableDataCount = 0;
+               if (dvbDevice->playMode != pmAudioVideo && dvbDevice->playMode != pmVideoOnly) {
+                  data += packetLength - fragmentLen;
+                  fragmentLen = 0;
+                  streamId = 0;
+                  continue;
+                  }
+#ifdef M7X0_PLAY_TS
+               tsPid = 0xE0;
+               ccounter = &video_ccounter;
+#endif
                break;
           default:
-               skipPesBytes = pesExpectedLength + 6 - pesLength;
-               Reset();
+               unusableDataCount += packetLength - fragmentLen;
+               data += packetLength - fragmentLen;
+               fragmentLen = 0;
+               streamId = 0;
+               if (unusableDataCount > REPLAY_MAX_UNUSABLE_DATA) {
+                  esyslog("ERROR: %d bytes of recoding unusable - giving up!", unusableDataCount);
+                  errno = EDEADLK; // Any ideas for a better errorcode
+                  return -1;
+                  }
+               continue;
           }
+
+        int bite = packetLength - fragmentLen;
+        if (data + bite <= limit) {
+#ifdef M7X0_PLAY_TS
+           int r;
+           if (fragmentLen) {
+              memcpy(fragmentData + fragmentLen, data, bite);
+              fragmentLen += bite;
+              r = WriteOutPacket(fragmentData,fragmentLen,tsPid,ccounter);
+              }
+           else
+              r = WriteOutPacket(data,bite,tsPid,ccounter);
+#else
+           int r = WriteOutPacket(data,bite);
+#endif
+
+           if (r < 0) {
+              return r;
+              }
+           data += bite;
+           streamId = 0;
+           privateStreamId = 0;
+           fragmentLen = 0;
+           }
+        else
+           break;
         }
-  return length;
+
+  int bite = limit - data;
+  if (bite > 0) {
+     memcpy(fragmentData + fragmentLen, data, bite);
+     fragmentLen += bite;
+     }
+  else
+     packetSkipBytes = -bite;
+
+  return Length;
 }
 
 void c7x0Replayer::TrickSpeed(const int Speed,const bool UseFastForward)
 {
   dsyslog("TrickSpeed called Speed %d %d!",Speed, UseFastForward);
-  cMutexLock MutexLock(&playerMutex);
-  closeDvr();
-  if (!inFastplay && !inSlowmotion || inFastplay != UseFastForward) {
-     if (pesLength > 6) {
-        skipPesBytes = pesExpectedLength + 6 - pesLength;
-        Reset();
-        }   
-     trickSpeedSynced = false;
-     trickSpeedBufferLength = 0;
-     videoStartcode = 0xFFFFFFFF;
-     trickSpeedBufferWriteLength=0;
+  if (dvbDevice->playMode != pmAudioVideo && dvbDevice->playMode != pmVideoOnly)
+     return;
+  // Uglly needed otherwise continue won't work
+  // Yet another bug in driver!?!
+  CHECK(ioctl(dvbDevice->fd_audio, AUDIO_SET_MUTE, true));
+  CHECK(ioctl(dvbDevice->fd_audio, AUDIO_STOP,0));
+  CHECK(ioctl(dvbDevice->fd_video, VIDEO_STOP,0));
+  CloseDvr();
+
+  if (!inTrickspeed || !UseFastForward) {
+     trickspeedState = syncing;
+     trickspeedScanner = 0xFFFFFFFF;
+     trickspeedLen = 0;
      }
-   
-  if (UseFastForward) {
-     trickSpeedWriteTimes = Speed;
-     CHECK(ioctl(fd_video, VIDEO_FAST_FORWARD, 1));
-     } 
-  else {
-     trickSpeedWriteTimes=1;
-     CHECK(ioctl(fd_video, VIDEO_SLOWMOTION, Speed));
-     }
- 
-  inFastplay=UseFastForward;
-  inSlowmotion=!inFastplay;
+  if (Speed > 1)
+     CHECK(ioctl(dvbDevice->fd_video, VIDEO_SLOWMOTION, Speed << 1))
+  else
+     CHECK(ioctl(dvbDevice->fd_video, VIDEO_FAST_FORWARD, 1))
+  inTrickspeed = true;
+
 }
 
 void c7x0Replayer::Play(void)
 {
   dsyslog("Play called!");
-  cMutexLock MutexLock(&playerMutex);
+  //CHECK(ioctl(dvbDevice->fd_audio, AUDIO_STOP,0));
+  //CHECK(ioctl(dvbDevice->fd_video, VIDEO_STOP,0));
+  //CloseDvr();
+  inTrickspeed = false;
+  //OpenDvr();
+  CHECK(ioctl(dvbDevice->fd_audio, AUDIO_SET_MUTE, false));
+  if (dvbDevice->playMode != pmAudioVideo && dvbDevice->playMode != pmVideoOnly)
+     CHECK(ioctl(dvbDevice->fd_audio, AUDIO_CONTINUE, 0));
 
-  if (inSlowmotion || inFastplay){
-     if (pesLength >= 6) {
-        skipPesBytes = pesExpectedLength + 6 - pesLength;
-        Reset();
-        }
-     inSlowmotion = false;
-     inFastplay = false;
-  }
-
-  openDvr();
 }
 
 void c7x0Replayer::Clear(void)
 {
   dsyslog("Clear called!");
-  cMutexLock MutexLock(&playerMutex);
-  ResetAll();
+  // CHECK(ioctl(dvbDevice->fd_audio, AUDIO_SET_MUTE, true));
+  // CHECK(ioctl(dvbDevice->fd_audio, AUDIO_STOP,0));
+  // CHECK(ioctl(dvbDevice->fd_video, VIDEO_STOP,0));
+  CloseDvr();
+  /* if (!inTrickspeed) {
+     dsyslog("Clear called2!");
+     OpenDvr();
+     CHECK(ioctl(dvbDevice->fd_audio, AUDIO_SET_MUTE, false));
+     }*/
+
 }
 
 void c7x0Replayer::Freeze(void)
 {
   dsyslog("Freeze called!");
-  cMutexLock MutexLock(&playerMutex);
-  closeDvr();
+  if (dvbDevice->playMode == pmAudioVideo || dvbDevice->playMode == pmVideoOnly) {
+     CloseDvr();
+     CHECK(ioctl(dvbDevice->fd_video, VIDEO_STOP,0));
+     CHECK(ioctl(dvbDevice->fd_audio, AUDIO_SET_MUTE, true));
+     if (dvbDevice->playMode == pmAudioVideo)
+        CHECK(ioctl(dvbDevice->fd_audio, AUDIO_STOP,0));
+     }
+  else
+     CHECK(ioctl(dvbDevice->fd_audio, AUDIO_PAUSE, 0));
 }
 
 bool c7x0Replayer::Poll(cPoller &Poller,const int TimeoutMs)
 {
-  cMutexLock MutexLock(&playerMutex);
+
   return true;
 }
 
 bool c7x0Replayer::Flush(const int TimeoutMs)
 {
   dsyslog("Flush called!");
-  cMutexLock MutexLock(&playerMutex);
-
-  if (WriteData()<0)
-     return false;
   return true;
+}
+
+// -----------------
+// c7x0Ts
+
+#define MAXPMTIDS 64
+
+class c7x0TsReplayer {
+private:
+  FILE *testWriter;
+  cDvbDevice *dvbDevice;
+  int fd_dvr;
+  int fd_dmx_video;
+  int fd_dmx_audio;
+  int fd_dmx_pcr;
+
+  struct {
+    int patVersion;
+    int readVersion;
+    int curCCounter;
+    int curSection;
+    int numPmtIds;
+    int pmtIds[MAXPMTIDS];
+    } sPatInfo;
+  uchar patBuf[1024 + 184];
+  uchar pmtBuf[1024 + 184];
+  int patBufLength;
+  int pmtBufLength;
+  int curPmtId;
+  int pmtCCounter;
+  int curPmtVersion;
+
+
+
+  int videoStreamId;
+  int pcrStreamId;
+
+  eTrackType curAudioTrack;
+  int curAudioStreamId;
+
+  uchar fragmentData[188];
+  int fragmentLen;
+
+
+  int skippedBytes;
+  int unusableDataCount;
+  time_t lastPlaytime;
+
+  uchar *trickspeedData;
+  int trickspeedLen;
+  int trickspeedSize;
+  bool inTrickspeed;
+  bool inFastplay;
+  enum {
+       syncing,
+       findFrame,
+       scanFrame
+       } trickspeedState;
+  uint32_t trickspeedScanner;
+  uchar pesHeader[9 + 255];
+  int pesHeaderLength;
+  int pesPacketLen;
+  bool pesHeaderCompleted;
+  int trickspeedCCounter;
+
+  bool ReallocTrickspeedBuffer(const int Size);
+  bool ScanDataTrickspeed(const uchar *&Data, const uchar *Limit);
+  void OpenDvr(void);
+  void CloseDvr(void);
+  inline bool CheckTsHeader(const uchar *Data, bool &PayloadStart,
+             int &PayloadOffset, int &CurCCounter, bool &OutOfSeq);
+
+  inline bool CopySectionData(const uchar *Data, int Count, bool SectionStart,
+                              uchar *SectionBuffer, int &SectionBufferLength);
+
+  inline bool GetCommonSectionHeader(const uchar *Data, int Count,
+            int ExpectedTableId, int &SectionLen, int &SectionVer,
+                bool &Current, int &SectionNo, int &LastSectionNo);
+
+  inline int HandlePmtElemInfo(const uchar *Data, int Length, int &Vpid,
+                     int &Apid, int &Dpid, char *Alangs, char *Dlangs);
+
+  inline bool HandlePesTrickspeed(const uchar *&Data,
+          const uchar *const Limit, bool payloadStart);
+
+  void HandlePat(const uchar *Data);
+  void HandlePmt(const uchar *Data);
+  inline int CheckPmtIds(const int Pid);
+
+  void CheckAndSetupAudio(bool idsChanged = false);
+  void CheckAndSetupVideo(int PcrId, int VideoId);
+  int ScanDataForPacketStartCode(const uchar *&Data,const uchar *const Limit);
+  int HandleTrickspeed(const uchar *Data);
+  bool CheckTimeout(void);
+
+  int WriteOutPacket(const uchar *Data, int Count);
+
+public:
+  void Reset(void);
+  c7x0TsReplayer(cDvbDevice *dev);
+  ~c7x0TsReplayer();
+  int PlayTs(const uchar *Data, int Length);
+  void TrickSpeed(const int Speed,const bool UseFastForward);
+  void Clear();
+  void Play();
+  void Freeze();
+  bool Poll(cPoller &Poller,const int TimeoutMs);
+  bool Flush(const int TimeoutMs);
+  void SetPids(int PmtPid, int VideoPid);
+  int GetVideoPid(void) { return (videoStreamId > 0 ? videoStreamId : 0); }
+  };
+
+
+void c7x0TsReplayer::Reset(void)
+{
+  CloseDvr();
+
+  videoStreamId = -1;
+  pcrStreamId = -1;
+
+  sPatInfo.patVersion = -1;
+  sPatInfo.readVersion = -1;
+  sPatInfo.curCCounter = -1;
+  sPatInfo.curSection = 0;
+  sPatInfo.numPmtIds = 0;
+  pmtCCounter = -1;
+  patBufLength = 0;
+  pmtBufLength = 0;
+  curPmtId = -1;
+  pmtCCounter = -1;
+  curPmtVersion = -1;
+
+  curAudioTrack = ttNone;
+  curAudioStreamId = 0;
+
+  fragmentLen = 0;
+  skippedBytes = 0;
+  unusableDataCount = 0;
+
+  trickspeedScanner = 0xFFFFFFFF;
+  inTrickspeed = false;
+  inFastplay = false;
+  trickspeedState = syncing;
+  trickspeedLen = 0;
+  trickspeedCCounter = -1;
+  pesHeaderLength = 0;
+  pesPacketLen = 0;
+  pesHeaderCompleted = false;
+  dvbDevice->ClrAvailableTracks();
+}
+
+c7x0TsReplayer::c7x0TsReplayer(cDvbDevice *dev)
+{
+  dvbDevice = dev;
+  fd_dvr = -1;
+  Reset();
+  trickspeedSize = 0;
+  trickspeedData = NULL;
+  ReallocTrickspeedBuffer(INITIAL_TRICKSPEED_BUFFER_SIZE);
+
+  //testWriter = fopen("/pc2/tests/trickSpeedTest.m2v","w");
+}
+
+c7x0TsReplayer::~c7x0TsReplayer()
+{
+  CloseDvr();
+  free(trickspeedData);
+  //fclose(testWriter);
+}
+
+bool c7x0TsReplayer::ReallocTrickspeedBuffer(const int Size)
+{
+  if (Size <= trickspeedSize)
+     return true;
+
+  uchar *tmp = (uchar *) realloc(trickspeedData,Size);
+  if (!tmp) {
+     esyslog("m7x0 Replayer cannot alloc memory!");
+     return false;
+     }
+
+  trickspeedSize=Size;
+  trickspeedData=tmp;
+  return true;
+}
+
+void c7x0TsReplayer::OpenDvr(void)
+{
+  if (fd_dvr >= 0)
+     return;
+
+  // None-Blocking-Mode not working as expected
+  fd_dvr = DvbOpen(DEV_DVB_ADAPTER DEV_DVB_DVR, 0, O_WRONLY, true);
+
+
+  if (fd_dvr <0 )
+     return;
+
+  CHECK(ioctl(fd_dvr,DVR_SET_STREAM_TYPE, DVR_MPEG2_TS));
+
+  CHECK(ioctl(dvbDevice->fd_audio,AUDIO_SET_AV_SYNC,dvbDevice->playMode == pmTsAudioVideo));
+
+  fd_dmx_audio = -1;
+  fd_dmx_video = -1;
+  fd_dmx_pcr   = -1;
+  curAudioTrack = ttNone;
+  CheckAndSetupVideo(pcrStreamId, videoStreamId);
+  CheckAndSetupAudio();
+  lastPlaytime = time(NULL);
+}
+
+void c7x0TsReplayer::CheckAndSetupVideo(int PcrId, int VideoId)
+{
+  if (fd_dvr < 0)
+     return;
+
+  if (PcrId >= 0 && (PcrId != pcrStreamId || fd_dmx_pcr < 0)) {
+     if (fd_dmx_pcr >= 0) {
+        CHECK(ioctl(fd_dmx_pcr, DMX_STOP,1));
+        }
+     else {
+        fd_dmx_pcr = DvbOpen(DEV_DVB_ADAPTER DEV_DVB_DEMUX, 0, O_RDWR | O_NONBLOCK, true);
+        if (fd_dmx_pcr < 0) {
+           return;
+           }
+        }
+     dmx_pes_filter_params pesFilterParams;
+     memset(&pesFilterParams, 0, sizeof(pesFilterParams));
+
+     pesFilterParams.pid      = PcrId;
+     pesFilterParams.input    = DMX_IN_DVR;
+     pesFilterParams.output   = DMX_OUT_DECODER0;
+     pesFilterParams.pes_type = DMX_PES_PCR;
+     pesFilterParams.flags    = DMX_IMMEDIATE_START;
+
+     int r, i = 0, errnoSave;
+
+     // Is this loop really nessesary any more.
+     // In earllier Versions the driver returns with EBUSY sometimes
+     do {
+        if ((r = ioctl(fd_dmx_pcr,DMX_SET_PES_FILTER, &pesFilterParams)) < 0) {
+           errnoSave = errno;
+           CHECK(r);
+           cCondWait::SleepMs(3);
+           }
+        else
+           errnoSave = 0;
+        i++;
+        } while (errnoSave == EBUSY && i <= 100);
+
+     if (errnoSave != 0) {
+        close(fd_dmx_pcr);
+        fd_dmx_pcr = -1;
+        return;
+        }
+     pcrStreamId = PcrId;
+     }
+
+  if (VideoId > 0 && (VideoId != videoStreamId || fd_dmx_video < 0) && (dvbDevice->playMode == pmTsAudioVideo || dvbDevice->playMode == pmTsVideoOnly)) {
+     if (fd_dmx_video >= 0) {
+        CHECK(ioctl(fd_dmx_video, DMX_STOP,1));
+        CHECK(ioctl(dvbDevice->fd_video,VIDEO_STOP,0));
+        }
+     else {
+        fd_dmx_video = DvbOpen(DEV_DVB_ADAPTER DEV_DVB_DEMUX, 0, O_RDWR | O_NONBLOCK, true);
+        if (fd_dmx_video < 0) {
+           return;
+           }
+        }
+     dmx_pes_filter_params pesFilterParams;
+     memset(&pesFilterParams, 0, sizeof(pesFilterParams));
+
+     // Uglly the driver needs setting exacty this Value
+     // Yet another BUG in m7x0-drivers
+     CHECK(ioctl(fd_dmx_video, DMX_SET_BUFFER_SIZE,0x100000));
+
+     pesFilterParams.pid      = VideoId;
+     pesFilterParams.input    = DMX_IN_DVR;
+     pesFilterParams.output   = DMX_OUT_DECODER0;
+     pesFilterParams.pes_type = DMX_PES_VIDEO;
+     pesFilterParams.flags    = DMX_IMMEDIATE_START;
+
+     int r, i = 0, errnoSave;
+
+     // Is this loop really nessesary any more.
+     // In earllier Versions the driver returns with EBUSY sometimes
+     do {
+        if ((r = ioctl(fd_dmx_video,DMX_SET_PES_FILTER, &pesFilterParams)) < 0) {
+           errnoSave = errno;
+           CHECK(r);
+           cCondWait::SleepMs(3);
+           }
+        else
+           errnoSave = 0;
+        i++;
+        } while (errnoSave == EBUSY && i <= 100);
+
+     if (errnoSave != 0) {
+        close(fd_dmx_video);
+        fd_dmx_video = -1;
+        return;
+        }
+
+     videoStreamId = VideoId;
+     CHECK(ioctl(dvbDevice->fd_video,VIDEO_PLAY,0));
+     }
+}
+
+void c7x0TsReplayer::CheckAndSetupAudio(bool idsChanged)
+{
+  if (fd_dvr < 0)
+     return;
+
+  eTrackType newAudioTrack = dvbDevice->GetCurrentAudioTrack();
+
+
+  if (newAudioTrack != ttNone && dvbDevice->playMode != pmTsVideoOnly &&
+                                      (newAudioTrack != curAudioTrack ||
+                   (idsChanged && dvbDevice->GetTrack(newAudioTrack)->id
+                                                  != curAudioStreamId))) {
+
+     curAudioStreamId = dvbDevice->GetTrack(newAudioTrack)->id;
+
+     if (fd_dmx_audio >= 0) {
+        CHECK(ioctl(fd_dmx_audio, DMX_STOP,1));
+        CHECK(ioctl(dvbDevice->fd_audio,AUDIO_STOP,0));
+        }
+     else {
+        fd_dmx_audio = DvbOpen(DEV_DVB_ADAPTER DEV_DVB_DEMUX, 0,
+                                      O_RDWR | O_NONBLOCK, true);
+        if (fd_dmx_audio < 0) {
+           return;
+           }
+        }
+
+     dmx_pes_filter_params pesFilterParams;
+     memset(&pesFilterParams, 0, sizeof(pesFilterParams));
+     CHECK(ioctl(fd_dmx_audio, DMX_SET_BUFFER_SIZE,0x1E000));
+     pesFilterParams.input    = DMX_IN_DVR;
+     pesFilterParams.pes_type = DMX_PES_AUDIO;
+     pesFilterParams.flags    = DMX_IMMEDIATE_START;
+     pesFilterParams.pid = curAudioStreamId;
+
+
+     if (IS_DOLBY_TRACK(newAudioTrack)) {
+        pesFilterParams.output   = DMX_OUT_DECODER1;
+        }
+     else {
+        pesFilterParams.output   = DMX_OUT_DECODER0;
+        }
+
+      int r, i = 0, errnoSave;
+
+     // Is this loop really nessesary any more.
+     // In earllier Versions the driver returns with EBUSY sometimes
+     do {
+        if ((r = ioctl(fd_dmx_audio, DMX_SET_PES_FILTER, &pesFilterParams)) < 0) {
+           errnoSave = errno;
+           CHECK(r);
+           cCondWait::SleepMs(3);
+           }
+        else
+           errnoSave = 0;
+        i++;
+        } while (errnoSave == EBUSY && i <= 100);
+
+     if (errnoSave != 0) {
+        close(fd_dmx_audio);
+        return;
+        }
+
+     CHECK(ioctl(dvbDevice->fd_audio,AUDIO_PLAY,0));
+     curAudioTrack = newAudioTrack;
+     }
+}
+
+void c7x0TsReplayer::CloseDvr()
+{
+  if (fd_dvr < 0)
+     return;
+
+  if (fd_dmx_audio >= 0) {
+     CHECK(ioctl(fd_dmx_audio, DMX_STOP,1));
+     close(fd_dmx_audio);
+     fd_dmx_audio = -1;
+     curAudioTrack = ttNone;
+     }
+
+  if (fd_dmx_video >= 0) {
+     CHECK(ioctl(fd_dmx_video, DMX_STOP,1));
+     close(fd_dmx_video);
+     fd_dmx_video = -1;
+     }
+
+  if (fd_dmx_pcr >= 0) {
+     CHECK(ioctl(fd_dmx_pcr, DMX_STOP,1));
+     close(fd_dmx_pcr);
+     fd_dmx_pcr = -1;
+     }
+
+  close(fd_dvr);
+  fd_dvr = -1;
+  if (dvbDevice->playMode != pmTsVideoOnly)
+     CHECK(ioctl(dvbDevice->fd_audio, AUDIO_STOP, 0))
+  if (dvbDevice->playMode == pmTsAudioVideo || dvbDevice->playMode == pmTsVideoOnly)
+     CHECK(ioctl(dvbDevice->fd_video, VIDEO_STOP, 0));
+}
+
+int c7x0TsReplayer::ScanDataForPacketStartCode(const uchar *&Data,const uchar *const Limit)
+{
+  register const uchar *data = Data;
+  register const uchar *const limit = Limit;
+
+  if (fragmentLen) {
+     int c = min (188 - fragmentLen, limit - data);
+     memcpy(fragmentData + fragmentLen, data, c);
+     data += c;
+     fragmentLen += c;
+
+     Data = data;
+
+     if (fragmentLen < 188)
+        return -1;
+
+     return (((fragmentData[1] << 8) | fragmentData[2]) & 0x1fff);
+     }
+
+  while (data < limit && data[0] != 0x47) {
+        data++;
+        }
+
+  skippedBytes += data - Data;
+
+  if (limit - data < 188) {
+     int c =  limit - data;
+
+     memcpy(fragmentData, data, c);
+     fragmentLen = c;
+     Data = limit;
+     return -1;
+     }
+
+  Data = data;
+  return (((data[1] << 8) | data[2]) & 0x1fff);
+}
+
+bool c7x0TsReplayer::CheckTsHeader(const uchar *Data, bool &PayloadStart,
+                    int &PayloadOffset, int &CurCCounter, bool &OutOfSeq)
+{
+
+  PayloadStart = (Data[1] & 0x40);
+  OutOfSeq = false;
+  PayloadOffset = 4 + ((Data[3] & 0x20) ? Data[4] + 1 : 0);
+
+  const int ccounter = Data[3] & 0xF;
+
+  // Dublicate Packet or no Payload ?
+  if (ccounter == CurCCounter || !(Data[3] & 0x10)) {
+     PayloadOffset = 188;
+     return true;
+     }
+
+  const int newccounter = (CurCCounter + 1) & 0xF;
+
+  OutOfSeq = (newccounter != ccounter || CurCCounter == -1);
+  CurCCounter = ccounter;
+
+
+  if (Data[1] & 0x80)
+     return false;
+
+  if (PayloadOffset > 188) {
+     esyslog("c7x0TsReplayer: Illegal adaption field length %d in TS-Packet", PayloadOffset - 5);
+     PayloadOffset = 188;
+     return false;
+     }
+
+  return true;
+}
+
+bool c7x0TsReplayer::CopySectionData(const uchar *Data, int Count,
+                          bool SectionStart, uchar *SectionBuffer,
+                                         int &SectionBufferLength)
+{
+  if (!SectionStart) {
+     if (!SectionBufferLength)
+        return false;
+
+     memcpy (SectionBuffer + SectionBufferLength, Data, Count);
+     SectionBufferLength += Count;
+     return true;
+     }
+
+  const int pointer = Data[0] + 1;
+  if (pointer >= Count) {
+     esyslog("c7x0TsReplayer: Illegal pointer field %d in Section", pointer);
+     return false;
+     }
+
+  if (!SectionBufferLength) {
+     SectionBufferLength = Count - pointer;
+     memcpy (SectionBuffer, Data + pointer, SectionBufferLength);
+     return true;
+     }
+
+  Count--;
+  Data++;
+  memcpy (SectionBuffer + SectionBufferLength, Data, Count);
+  SectionBufferLength += Count;
+  return true;
+}
+
+bool c7x0TsReplayer::GetCommonSectionHeader(const uchar *Data, int Count,
+                   int ExpectedTableId, int &SectionLen, int &SectionVer,
+                         bool &Current, int &SectionNo, int &LastSectionNo)
+{
+  if (ExpectedTableId != Data[0]) {
+     esyslog("c7x0TsReplayer: Illegal table id %hhd (expected %d) in section", Data[0], ExpectedTableId);
+     return false;
+     }
+
+  if (Count < 12) {
+     SectionLen = 12;
+     return true;
+     }
+
+  SectionLen = (((Data[1] << 8) | Data[2]) & 0xFFF) + 3;
+  if (SectionLen > 1024) {
+     esyslog("c7x0TsReplayer: Illegal section length %d", SectionLen);
+     return false;
+     }
+
+  SectionVer = (Data[5] >> 1) & 0x1F;
+  Current = Data[5] & 0x1;
+  SectionNo = Data[6];
+  LastSectionNo = Data[7];
+  return true;
+}
+
+
+
+void c7x0TsReplayer::HandlePat(const uchar *Data)
+{
+
+  bool sectionStart;
+  int payloadOffset;
+  bool outOfSeq;
+
+  if (!CheckTsHeader(Data, sectionStart, payloadOffset,
+                        sPatInfo.curCCounter, outOfSeq)) {
+     patBufLength = 0;
+     sPatInfo.curSection = 0;
+     return;
+     }
+
+  if (payloadOffset >= 188)
+     return;
+
+  if (outOfSeq) {
+     patBufLength = 0;
+     sPatInfo.curSection = 0;
+     }
+
+  if (!CopySectionData(Data + payloadOffset, 188 - payloadOffset,
+                              sectionStart, patBuf, patBufLength)) {
+     patBufLength = 0;
+     sPatInfo.curSection = 0;
+     return;
+     }
+
+
+  while (true) {
+        int sectionLen;
+        int sectionVer;
+        bool currentApp;
+        int sectionNo;
+        int lastSectionNo;
+
+        if (!GetCommonSectionHeader(patBuf, patBufLength, 0, sectionLen,
+                        sectionVer, currentApp, sectionNo, lastSectionNo)) {
+           patBufLength = 0;
+           sPatInfo.curSection = 0;
+           return;
+           }
+
+        if (patBufLength < sectionLen);
+           return;
+
+        if (!currentApp || sPatInfo.patVersion == sectionVer ||
+             (sectionNo && (sectionNo != sPatInfo.curSection ||
+                        sPatInfo.readVersion != sectionVer)) ||
+                       !SI::CRC32::isValid((const char *) patBuf, sectionLen)) {
+
+           sPatInfo.curSection = 0;
+           if (patBufLength > sectionLen && !patBuf[sectionLen]) {
+              patBufLength -= sectionLen;
+              memmove(patBuf,patBuf + sectionLen, patBufLength);
+              continue;
+              }
+
+           patBufLength = 0;
+           return;
+           }
+
+        sPatInfo.readVersion = sectionVer;
+
+        if (!sectionNo) {
+           sPatInfo.numPmtIds = 0;
+           }
+
+        int entryCount = (sectionLen - 12) >> 2;
+
+        if (entryCount + sPatInfo.numPmtIds > MAXPMTIDS)
+           entryCount = MAXPMTIDS - sPatInfo.numPmtIds;
+
+        uint16_t *tmp = (uint16_t *) (patBuf + 8);
+        for (int i = 0; i < entryCount; i++) {
+            if (tmp[i<<1]) {
+               sPatInfo.pmtIds[sPatInfo.numPmtIds++] = tmp[(i<<1)+1] & 0x1FFF;
+               }
+            }
+
+        if (sectionNo == lastSectionNo) {
+           sPatInfo.patVersion = sectionVer;
+           sPatInfo.curSection = 0;
+           int i;
+           for (i = 0; i < sPatInfo.numPmtIds && sPatInfo.pmtIds[i] != curPmtId; i++)
+               ;
+
+           if (i == sPatInfo.numPmtIds) {
+              curPmtId = -1;
+              curPmtVersion = -1;
+              pmtCCounter = -1;
+              if (sPatInfo.numPmtIds == 1)
+                 curPmtId = sPatInfo.pmtIds[1];
+              }
+           }
+        else {
+           sPatInfo.curSection = sectionNo + 1;
+           }
+
+        if (patBufLength > sectionLen && !patBuf[sectionLen]) {
+           patBufLength -= sectionLen;
+           memmove(patBuf,patBuf + sectionLen, patBufLength);
+           continue;
+           }
+
+        patBufLength = 0;
+        return;
+        }
+
+}
+
+int c7x0TsReplayer::HandlePmtElemInfo(const uchar *Data, int Length,
+      int &Vpid, int &Apid, int &Dpid, char *Alangs, char *Dlangs)
+{
+
+  const int streamType = Data[0];
+  const int elemPid = ((Data[1] << 8) | Data[2]) & 0x1FFF;
+  const int elemInfoLen = (((Data[3] << 8) | Data[4]) & 0xFFF) + 5;
+
+  if (elemInfoLen > Length) {
+     esyslog("c7x0TsReplayer: Illegal elementary info length %d in PMT-Section", elemInfoLen);
+     return -1;
+     }
+
+  Apid = Dpid = 0;
+
+
+  char *curLangStr;
+  bool AC3DescFound = false;
+  switch (streamType) {
+    case 1:
+    case 2:
+         Vpid = elemPid;
+         return elemInfoLen;
+    case 3:
+    case 4:
+         Apid = elemPid;
+         curLangStr = Alangs;
+         break;
+    case 6:
+         Dpid = elemPid;
+         curLangStr = Dlangs;
+         break;
+    default:
+         return elemInfoLen;
+    }
+
+  int offset = 5;
+  int curLangCount = 0;
+
+  while (offset < elemInfoLen) {
+        const int descriptorTag = Data[offset++];
+        const int descriptorLen = Data[offset++];
+
+        if (descriptorLen + offset > elemInfoLen) {
+           esyslog("c7x0TsReplayer: Illeagl descriptor length %d in PMT section", descriptorLen);
+           break;
+           }
+
+        if (descriptorTag == 0x0A) { // Languages
+           for (int i= 0; i < descriptorLen && curLangCount < 2; i += 4) {
+               if (Data[offset + i] == '-')
+                  continue;
+
+               if (curLangCount > 0)
+                  *curLangStr++ = '+';
+
+               strn0cpy(curLangStr, I18nNormalizeLanguageCode(
+                             (const char*) &Data[offset + i]), MAXLANGCODE1);
+
+               curLangCount++;
+               curLangStr += strlen(curLangStr);
+               }
+           }
+        else if (descriptorTag == 0x6A) { // AC3 Descriptor
+           AC3DescFound = true;
+           }
+
+        offset += descriptorLen;
+        }
+
+  if (!AC3DescFound)
+     Dpid = 0;
+  return elemInfoLen;
+}
+
+void c7x0TsReplayer::HandlePmt(const uchar *Data)
+{
+  bool sectionStart;
+  int payloadOffset;
+  bool outOfSeq;
+
+  if (!CheckTsHeader(Data, sectionStart, payloadOffset,
+                                pmtCCounter, outOfSeq)) {
+     pmtBufLength = 0;
+     return;
+     }
+
+  if (payloadOffset >= 188)
+     return;
+
+  if (outOfSeq)
+     pmtBufLength = 0;
+
+
+  if (!CopySectionData(Data + payloadOffset, 188 - payloadOffset,
+                              sectionStart, pmtBuf, pmtBufLength)) {
+     pmtBufLength = 0;
+     return;
+     }
+
+  while (true) {
+        int sectionLen;
+        int sectionVer;
+        bool currentApp;
+        int sectionNo;
+        int lastSectionNo;
+
+        if (!GetCommonSectionHeader(pmtBuf, pmtBufLength, 0x02, sectionLen,
+                        sectionVer, currentApp, sectionNo, lastSectionNo)) {
+           pmtBufLength = 0;
+           return;
+           }
+
+        if (pmtBufLength < sectionLen)
+           return;
+
+        if (!currentApp || curPmtVersion == sectionVer ||
+                 !SI::CRC32::isValid((const char *) pmtBuf, sectionLen)) {
+
+           if (pmtBufLength > sectionLen && patBuf[sectionLen] == 0x02) {
+              pmtBufLength -= sectionLen;
+              memmove(pmtBuf, pmtBuf + sectionLen, pmtBufLength);
+              continue;
+              }
+
+           pmtBufLength = 0;
+           return;
+           }
+
+        const int PcrPid = ((pmtBuf[8] << 8) | pmtBuf[9]) & 0x1FFF;
+        int VideoPid = 0;
+        int AudioPids[MAXAPIDS + 1];
+        int DolbyPids[MAXDPIDS + 1];
+        char AudioLangs[MAXAPIDS + 1][MAXLANGCODE2];
+        char DolbyLangs[MAXDPIDS + 1][MAXLANGCODE2];
+        int NumAudioPids = 0;
+        int NumDolbyPids = 0;
+
+
+        int offset = (((pmtBuf[10] << 8) | pmtBuf[11]) & 0xFFF) + 12;
+        while (offset < sectionLen - 4) { // ES Info Loop
+              int r = HandlePmtElemInfo(pmtBuf + offset, sectionLen - offset - 4,
+                  VideoPid, AudioPids[NumAudioPids], DolbyPids[NumDolbyPids],
+                          AudioLangs[NumAudioPids], DolbyLangs[NumDolbyPids]);
+
+              if (r < 0) {
+                 pmtBufLength = 0;
+                 return;
+                 }
+
+              if (AudioPids[NumAudioPids] && NumAudioPids < MAXAPIDS)
+                 NumAudioPids++;
+
+              if (DolbyPids[NumDolbyPids] && NumDolbyPids < MAXDPIDS)
+                 NumDolbyPids++;
+
+              offset += r;
+              }
+
+        CheckAndSetupVideo(PcrPid, VideoPid);
+        dvbDevice->ClrAvailableTracks();
+        for (int i = 0; i < NumAudioPids; i++)
+            dvbDevice->SetAvailableTrack(ttAudio, i, AudioPids[i], AudioLangs[i]);
+
+        if (Setup.UseDolbyDigital)
+           for (int i = 0; i < NumDolbyPids; i++)
+               dvbDevice->SetAvailableTrack(ttDolby, i, DolbyPids[i], DolbyLangs[i]);
+        dvbDevice->EnsureAudioTrack();
+        CheckAndSetupAudio(true);
+        curPmtVersion = sectionVer;
+
+        if (pmtBufLength > sectionLen && pmtBuf[sectionLen] == 0x02) {
+           pmtBufLength -= sectionLen;
+           memmove(pmtBuf, pmtBuf + sectionLen, pmtBufLength);
+           continue;
+           }
+
+        pmtBufLength = 0;
+        return;
+        }
+}
+
+
+bool c7x0TsReplayer::ScanDataTrickspeed(const uchar *&Data, const uchar *Limit)
+{
+  register const uchar *data = Data;
+  register const uchar *limit = Limit - 1;
+
+  while (data < limit)
+        if (data[0] > 1)
+           data += 3;
+        else if (!data[0])
+           data++;
+        else {
+           if (!(data[-2] | data[-1])) {
+              register const uchar code = *++data;
+              if (code == 0 || code == 0xB3 || code == 0xB8) {
+                 Data = data;
+                 return true;
+                 }
+              }
+           data += 3;
+           }
+
+  return false;
+}
+
+bool c7x0TsReplayer::HandlePesTrickspeed(const uchar *&Data,
+                                   const uchar *const Limit,
+                                          bool payloadStart)
+{
+  if (payloadStart) {
+     pesHeaderCompleted = false;
+     pesHeaderLength = 0;
+     pesPacketLen = 7; // Minimum
+     }
+  else if (pesPacketLen <= 0) {
+     Data = Limit;
+     return false;
+     }
+
+  if (pesHeaderCompleted) {
+     if (pesHeaderLength >=4 && pesHeader[3] == 0xBE) { // Skip padding stream
+        pesPacketLen -= Limit - Data;
+        Data = Limit;
+        }
+     return true;
+     }
+
+  const uchar *data = Data;
+  if (pesHeaderLength < 7) {
+     int c = min (7 - pesHeaderLength, Limit - data);
+     memcpy(pesHeader + pesHeaderLength,data, c);
+     pesHeaderLength += c;
+     data += c;
+     if (pesHeaderLength < 7) {
+        Data = data;
+        return true;
+        }
+     }
+
+  if ((pesHeader[0] | pesHeader[1] | pesHeader[2] -1) ||
+        (pesHeader[3] != 0xBE && (pesHeader[3] & 0xF0) != 0xE0)) {
+     esyslog("c7x0TsReplayer: Illegal PES-Packet in Video-Stream for trick speed");
+     pesHeaderLength = 0;
+     pesPacketLen = 0;
+     pesHeaderCompleted = true;
+     Data = Limit;
+     return false;
+     }
+
+  pesPacketLen = *((uint16_t *) (pesHeader + 4));
+
+  // Packet Length not bound ? (only allow in TS Video Packets)
+  // Define a maxium;
+  if (!pesPacketLen)
+        pesPacketLen = (1<<24);
+
+  pesPacketLen += 6;
+
+  if (pesHeader[3] == 0xBE) {
+     pesPacketLen -= Limit - data;
+     Data = Limit;
+     pesHeaderCompleted = true;
+     return true;
+     }
+
+  if (data >= Limit) {
+     Data = Limit;
+     return true;
+     }
+
+  if ((pesHeader[6] & 0xC0) == 0x80) { // MPEG2
+     if (pesHeaderLength < 9) {
+        int c = 9 - pesHeaderLength;
+
+        if (Limit - data >= c) {
+           c += data[c-1];
+           if (Limit - data < c)
+              c = Limit - data;
+           }
+        else
+           c = Limit - data;
+
+        memcpy(pesHeader + pesHeaderLength, data, c);
+        pesHeaderLength += c;
+        data += c;
+
+        if (pesHeaderLength < 9) {
+           Data = data;
+           return true;
+           }
+        }
+
+     const int headerLen = 9 + pesHeader[8];
+     if (pesHeaderLength < headerLen) {
+        if (data >= Limit) {
+           Data = Limit;
+           return true;
+           }
+
+        int c = min(headerLen - pesHeaderLength, Limit - data);
+        memcpy (pesHeader + pesHeaderLength, data, c);
+        pesHeaderLength += c;
+        data += c;
+
+        if (pesHeaderLength < headerLen) {
+           Data = data;
+           return true;
+           }
+        }
+
+     pesHeaderCompleted = true;
+     pesPacketLen -= pesHeaderLength;
+     }
+  else { // MPEG1
+     // Stuffing Bytes
+    int start = 6;
+    while (start < pesHeaderLength && pesHeader[start] == 0xFF)
+          start++;
+
+    if (start == pesHeaderLength) {
+       while (data < Limit && data[0] == 0xFF) {
+             pesHeader[pesHeaderLength++] = *data++;
+             start++;
+             }
+
+       if (data >= Limit) {
+          Data = Limit;
+          return true;
+          }
+
+       pesHeader[pesHeaderLength++] = *data++;
+       }
+
+    if ((pesHeader[start] & 0xC0) == 0x40) {
+       start += 2;
+
+       while (start >= pesHeaderLength && data < Limit)
+                 pesHeader[pesHeaderLength++] = *data++;
+
+       if (data >= Limit) {
+          Data = Limit;
+          return true;
+          }
+       }
+
+    if ((pesHeader[start] & 0xF0) == 0x20) {
+       start += 5;
+       }
+    else if ((pesHeader[start] & 0xF0) == 0x30) {
+       start += 10;
+       }
+    else {
+       start++;
+       }
+
+    int c = min(start - pesHeaderLength, Limit - data);
+    if (c > 0) {
+       memcpy(pesHeader + pesHeaderLength, data, c);
+       pesHeaderLength += c;
+       data += c;
+       }
+
+    if (pesHeaderLength < start) {
+       Data = data;
+       return true;
+       }
+
+    pesHeaderCompleted = true;
+    pesPacketLen -= pesHeaderLength;
+    }
+
+  return true;
+}
+
+int c7x0TsReplayer::HandleTrickspeed(const uchar *Data)
+{
+  bool payloadStart;
+  int tsPayloadOffset;
+  bool outOfSeq;
+
+  if (!CheckTsHeader(Data, payloadStart, tsPayloadOffset,
+                            trickspeedCCounter, outOfSeq)){
+     trickspeedLen = 0;
+     trickspeedState = syncing;
+     trickspeedScanner = 0xFFFFFFFF;
+     pesPacketLen = 0;
+     return 0;
+     }
+
+  if (tsPayloadOffset >= 188)
+     return 0;
+
+  if (outOfSeq) {
+     // Data has errors -> discard last (in most cases partial) frame
+     trickspeedLen = 0;
+     trickspeedState = syncing;
+     trickspeedScanner = 0xFFFFFFFF;
+     pesPacketLen = 0;
+     }
+
+   // Always a full packet should be present in Data.
+  const uchar *data = Data + tsPayloadOffset;
+  const uchar *limit = Data + 188;
+
+  if (!HandlePesTrickspeed(data, limit, payloadStart)) {
+     trickspeedLen = 0;
+     trickspeedState = syncing;
+     trickspeedScanner = 0xFFFFFFFF;
+     return 0;
+     }
+
+   if (data >= limit) {
+      return 0;
+      }
+
+   pesPacketLen -= limit - data;
+
+  // Driver expects an elementary video stream written to /dev/ost/video0
+  // while in trickspeed.
+  // At this point we would normally sync to a sequence header and
+  // write out the data from data until limit. Pes-header is stripped up
+  // above, the rest is video elementary data.
+  // But hey as always there are a number of bugs in this part of the driver:
+  // 1. Don't like writing startcodes aligned to start of buffer
+  //   (isn't it funny - this is the easiest case)
+  // 2. Don't like startcode a spilted over writes.
+  // There are some others which I not yet was able to trace down.
+  // Some parts of the video get replayed even if we are miles away for that
+  // point. Seems so as if some frames get not played right.
+  // The part below tries to workaround these issues.
+  // As always let me write a hint:
+  // IF YOU ARE IN CHARGE OF THE DRIVER SOURCE FIX THIS HORRIBLE BROKEN THING
+
+  const uchar *data_save = data;
+  const uchar *payload_start = data;
+
+  for (int i = 0; i < 3 && data < limit; i++) {
+      int code = data[0];
+      if ((trickspeedScanner & 0xFFFFFF) == 0x000001) {
+         if (trickspeedState == syncing && code == 0xB3) {
+            putIntUnalignedBE(trickspeedData, 0x00000000); // First two 0: Padding for bug in driver
+            trickspeedData[4] = 1;
+            trickspeedLen = 5;
+            payload_start = data;
+            data += 3 - i;
+            trickspeedState = findFrame;
+            break;
+            }
+         if (trickspeedState == findFrame && !code) {
+            trickspeedState = scanFrame;
+            data += 3 - i;
+            break;
+            }
+         if (trickspeedState == scanFrame && (!code || code == 0xB3 || code == 0xB8)) {
+            trickspeedLen -= 3 - i;
+            int r;
+            if ((r = write(dvbDevice->fd_video, trickspeedData, trickspeedLen)) < 0) {
+               LOG_ERROR;
+               return r;
+               }
+            //fwrite (trickspeedData, trickspeedLen, 1, testWriter);
+            if (r != trickspeedLen) {
+               esyslog("ERROR: Write of trickspeed data stripped off %d bytes",trickspeedLen - r);
+               }
+
+            putIntUnalignedBE(trickspeedData, 0x00000000); // First two 0: Padding for bug in driver
+            trickspeedData[4] = 1;
+            trickspeedLen = 5;
+            payload_start = data;
+            data += 3 - i;
+            if (code) {
+               trickspeedState = findFrame;
+               }
+            if (inFastplay && code != 0xB3) {
+               trickspeedState = syncing;
+               trickspeedLen = 0;
+               }
+            break;
+            }
+         }
+      trickspeedScanner = (trickspeedScanner << 8) | code;
+      data++;
+      }
+
+  data--;
+
+  while (ScanDataTrickspeed(data, limit)) {
+        int code = data[0];
+        if (trickspeedState == scanFrame) {
+           int n = data - 3 - payload_start;
+           if (n) {
+              if (!ReallocTrickspeedBuffer(n + trickspeedLen)) {
+                 errno = ENOMEM;
+                 return -1;
+                 }
+              memcpy(trickspeedData + trickspeedLen, payload_start, n);
+              trickspeedLen += n;
+              }
+           int r;
+           if ((r = write(dvbDevice->fd_video, trickspeedData, trickspeedLen)) < 0) {
+              LOG_ERROR;
+              return r;
+              }
+           //fwrite (trickspeedData, trickspeedLen, 1, testWriter);
+           if (r != trickspeedLen) {
+              esyslog("ERROR: Write of trickspeed data stripped off %d bytes",trickspeedLen - r);
+              }
+
+           trickspeedData[0] = 0; // Padding for bug in driver
+           trickspeedData[1] = 0; // Padding for bug in driver
+           trickspeedLen = 2;
+           payload_start = data - 3;
+           data += 3;
+           if (code) {
+              trickspeedState = findFrame;
+              }
+           if (inFastplay && code != 0xB3) {
+              trickspeedState = syncing;
+              trickspeedLen = 0;
+              }
+           }
+        else if (trickspeedState == findFrame && !code) {
+           trickspeedState = scanFrame;
+           data += 3;
+           }
+        else if (trickspeedState == syncing && code == 0xB3) {
+           trickspeedData[0] = 0; // Padding for bug in driver
+           trickspeedData[1] = 0; // Padding for bug in driver
+           trickspeedLen = 2;
+           payload_start = data - 3;
+           data += 3;
+           trickspeedState = findFrame;
+           }
+        }
+
+  int n = min (4, limit - data_save);
+  memcpy(&trickspeedScanner, limit - n, n);
+
+  if (trickspeedState == syncing){
+     unusableDataCount += limit - Data;
+     return 0;
+     }
+
+  unusableDataCount = 0;
+  n = limit - payload_start;
+  if (n) {
+     if (!ReallocTrickspeedBuffer(n + trickspeedLen)) {
+        errno = ENOMEM;
+        return -1;
+        }
+     memcpy(trickspeedData + trickspeedLen, payload_start, n);
+     trickspeedLen += n;
+     }
+  return 0;
+}
+
+
+
+bool c7x0TsReplayer::CheckTimeout(void)
+{
+  time_t now = time(NULL);
+
+  struct video_status videoStat;
+  if (ioctl(dvbDevice->fd_video, VIDEO_GET_STATUS, &videoStat) >= 0 && videoStat.play_state == VIDEO_PLAYING)
+     lastPlaytime = now;
+  else if (now - lastPlaytime > REPLAY_TIMEOUT) {
+     esyslog("ERROR: Playing timed out!");
+     dsyslog("DEBUG: Video ID 0x%02X Audio ID 0x%02d", videoStreamId, curAudioStreamId);
+
+     errno = EDEADLK;
+     return true;
+     }
+  return false;
+}
+
+int c7x0TsReplayer::WriteOutPacket(const uchar *Data, int Count)
+{
+
+  int r;
+
+  while (Count) {
+        if ((r = write(fd_dvr,Data,Count)) < 0) {
+           LOG_ERROR;
+           return r;
+           }
+        Count -= r;
+        Data += r;
+        }
+
+#ifdef USE_PLAYER_WATCHDOG
+  if (CheckTimeout())
+     return -1;
+#endif
+  return 0;
+}
+
+int c7x0TsReplayer::CheckPmtIds(const int Pid)
+{
+
+  for (int i = 0; i < sPatInfo.numPmtIds ; i++)
+      if (sPatInfo.pmtIds[i] == Pid)
+         return Pid;
+
+  return -1;
+}
+
+int c7x0TsReplayer::PlayTs(const uchar *Data, int Length)
+{
+  if (!Data) {
+     dsyslog("m7x0 Replayer: Discarding last Ts-Packet");
+     fragmentLen = 0;
+     return 0;
+     }
+
+  if (!inTrickspeed)
+     OpenDvr();
+
+  const uchar *data = Data;
+  const uchar *const limit = Data + Length;
+  int streamId;
+  int writeOutCount = 0;
+  const uchar *writeOutStart = NULL;
+
+  while (data < limit) {
+        // dsyslog
+        if (fragmentLen == 188) {
+           int r = WriteOutPacket(fragmentData,188);
+           if (r < 0) {
+               return r;
+               }
+           writeOutCount -= 188;
+           fragmentLen = 0;
+           }
+
+        if ((streamId = ScanDataForPacketStartCode(data,limit)) == -1) {
+           if (skippedBytes > REPLAY_MAX_UNUSABLE_DATA) {
+              esyslog("ERROR: %d bytes of recoding unusable while in initialization - giving up!", unusableDataCount);
+              errno = EDEADLK; // Any ideas for a better errorcode
+              return -1;
+              }
+
+           break;
+           }
+
+        if (skippedBytes) {
+           if (writeOutCount) {
+              int r = WriteOutPacket(writeOutStart,writeOutCount);
+              if (r < 0) {
+                 return r;
+                 }
+              writeOutCount = 0;
+              }
+           esyslog("ERROR: c7x0TsReplayer skipped %d bytes while syncing on Packet",skippedBytes);
+           unusableDataCount += skippedBytes;
+           skippedBytes = 0;
+           }
+
+        if (!writeOutCount)
+           writeOutStart = data;
+
+        if (!streamId) {
+           if (writeOutCount) {
+              int r = WriteOutPacket(writeOutStart,writeOutCount);
+              if (r < 0) {
+                 return r;
+                 }
+              writeOutCount = 0;
+              }
+
+           unusableDataCount = 0;
+           if (fragmentLen) {
+              HandlePat(fragmentData);
+              fragmentLen = 0;
+              }
+           else {
+              HandlePat(data);
+              data += 188;
+              }
+           continue;
+           }
+
+        if (curPmtId == -1) {
+           curPmtId = CheckPmtIds(streamId);
+           curPmtVersion = -1;
+           pmtCCounter = -1;
+           }
+
+        if (curPmtId == streamId) {
+           if (writeOutCount) {
+              int r = WriteOutPacket(writeOutStart,writeOutCount);
+              if (r < 0) {
+                 return r;
+                 }
+              writeOutCount = 0;
+              }
+           unusableDataCount = 0;
+
+           if (fragmentLen) {
+              HandlePmt(fragmentData);
+              fragmentLen = 0;
+              }
+           else {
+              HandlePmt(data);
+              data += 188;
+              }
+
+           continue;
+           }
+
+        if (inTrickspeed) {
+           writeOutCount = 0;
+           if (streamId == videoStreamId) {
+              unusableDataCount = 0;
+              int r;
+              if (fragmentLen) {
+                 r = HandleTrickspeed(fragmentData);
+                 fragmentLen = 0;
+                 }
+              else {
+                 r = HandleTrickspeed(data);
+                 data += 188;
+                 }
+              if (r < 0) {
+                 return r;
+                 }
+              continue;
+              }
+
+           if (fragmentLen)
+              fragmentLen = 0;
+           else
+              data += 188;
+
+           unusableDataCount += 188;
+           if (unusableDataCount > REPLAY_MAX_UNUSABLE_DATA) {
+              esyslog("ERROR: %d bytes of recoding unusable while in trickspeed - giving up!", unusableDataCount);
+              errno = EDEADLK; // Any ideas for a better errorcode
+              return -1;
+              }
+           continue;
+           }
+
+        if (streamId == videoStreamId || streamId == pcrStreamId) {
+           if (!fragmentLen)
+              data += 188;
+           writeOutCount += 188;
+           unusableDataCount = 0;
+           continue;
+           }
+
+        CheckAndSetupAudio();
+        if (streamId == curAudioStreamId) {
+           if (!fragmentLen)
+              data += 188;
+           writeOutCount += 188;
+           unusableDataCount = 0;
+           continue;
+           }
+
+        if (writeOutCount) {
+           int r = WriteOutPacket(writeOutStart,writeOutCount);
+           if (r < 0) {
+              return r;
+              }
+           writeOutCount = 0;
+           }
+
+        unusableDataCount += 188;
+        if (unusableDataCount > REPLAY_MAX_UNUSABLE_DATA) {
+           esyslog("ERROR: %d bytes of recoding unusable while in trickspeed - giving up!", unusableDataCount);
+           errno = EDEADLK; // Any ideas for a better errorcode
+           return -1;
+           }
+
+        if (!fragmentLen)
+           data += 188;
+        fragmentLen = 0;
+        }
+
+  if (writeOutCount) {
+     int r = WriteOutPacket(writeOutStart,writeOutCount);
+     if (r < 0) {
+        return r;
+        }
+     }
+  return Length;
+}
+
+void c7x0TsReplayer::TrickSpeed(const int Speed,const bool UseFastForward)
+{
+  dsyslog("TrickSpeed called Speed %d %d!",Speed, UseFastForward);
+  if (dvbDevice->playMode != pmTsAudioVideo && dvbDevice->playMode != pmTsVideoOnly)
+     return;
+  // Uglly needed otherwise continue won't work
+  // Yet another bug in driver!?!
+  CHECK(ioctl(dvbDevice->fd_audio, AUDIO_SET_MUTE, true));
+  CHECK(ioctl(dvbDevice->fd_audio, AUDIO_STOP,0));
+  CHECK(ioctl(dvbDevice->fd_video, VIDEO_STOP,0));
+  CloseDvr();
+
+  if (!inTrickspeed || !UseFastForward || (!inFastplay && UseFastForward)) {
+     trickspeedState = syncing;
+     trickspeedScanner = 0xFFFFFFFF;
+     trickspeedLen = 0;
+     trickspeedCCounter = -1;
+     pesHeaderLength = 0;
+     pesPacketLen = 0;
+     pesHeaderCompleted = false;
+     }
+  if (Speed > 1)
+     CHECK(ioctl(dvbDevice->fd_video, VIDEO_SLOWMOTION, Speed << 1))
+  else
+     CHECK(ioctl(dvbDevice->fd_video, VIDEO_FAST_FORWARD, 1))
+
+  inTrickspeed = true;
+  inFastplay = UseFastForward;
+}
+
+void c7x0TsReplayer::Play(void)
+{
+  dsyslog("Play called!");
+  //CHECK(ioctl(dvbDevice->fd_audio, AUDIO_STOP,0));
+  //CHECK(ioctl(dvbDevice->fd_video, VIDEO_STOP,0));
+  //CloseDvr();
+  inTrickspeed = false;
+  //OpenDvr();
+  CHECK(ioctl(dvbDevice->fd_audio, AUDIO_SET_MUTE, false));
+  if (dvbDevice->playMode != pmTsAudioVideo && dvbDevice->playMode != pmTsVideoOnly)
+     CHECK(ioctl(dvbDevice->fd_audio, AUDIO_CONTINUE, 0));
+
+}
+
+void c7x0TsReplayer::Clear(void)
+{
+  dsyslog("Clear called!");
+  // CHECK(ioctl(dvbDevice->fd_audio, AUDIO_SET_MUTE, true));
+  // CHECK(ioctl(dvbDevice->fd_audio, AUDIO_STOP,0));
+  // CHECK(ioctl(dvbDevice->fd_video, VIDEO_STOP,0));
+  CloseDvr();
+  /* if (!inTrickspeed) {
+     dsyslog("Clear called2!");
+     OpenDvr();
+     CHECK(ioctl(dvbDevice->fd_audio, AUDIO_SET_MUTE, false));
+     }*/
+
+}
+
+void c7x0TsReplayer::Freeze(void)
+{
+  dsyslog("Freeze called!");
+  if (dvbDevice->playMode == pmTsAudioVideo || dvbDevice->playMode == pmTsVideoOnly) {
+     CloseDvr();
+     CHECK(ioctl(dvbDevice->fd_video, VIDEO_STOP,0));
+     CHECK(ioctl(dvbDevice->fd_audio, AUDIO_SET_MUTE, true));
+     if (dvbDevice->playMode == pmTsAudioVideo)
+        CHECK(ioctl(dvbDevice->fd_audio, AUDIO_STOP,0));
+     }
+  else
+     CHECK(ioctl(dvbDevice->fd_audio, AUDIO_PAUSE, 0));
+}
+
+bool c7x0TsReplayer::Poll(cPoller &Poller,const int TimeoutMs)
+{
+
+  return true;
+}
+
+bool c7x0TsReplayer::Flush(const int TimeoutMs)
+{
+  dsyslog("Flush called!");
+  return true;
+}
+
+void c7x0TsReplayer::SetPids(int PmtPid, int VideoPid)
+{
+  if (PmtPid && curPmtId != PmtPid) {
+     curPmtId = PmtPid;
+     pmtCCounter = -1;
+     curPmtVersion = -1;
+     }
+
+  CheckAndSetupVideo(-1, VideoPid);
+  if (inTrickspeed && VideoPid > 0 && videoStreamId != VideoPid) {
+     videoStreamId = VideoPid;
+     trickspeedState = syncing;
+     trickspeedScanner = 0xFFFFFFFF;
+     trickspeedLen = 0;
+     trickspeedCCounter = -1;
+     pesHeaderLength = 0;
+     pesPacketLen = 0;
+     pesHeaderCompleted = false;
+     }
 }
 
 // --- c7x0TSBuffer ----------------------------------------------------------
@@ -1238,39 +3232,98 @@ bool c7x0Replayer::Flush(const int TimeoutMs)
 // FIX THIS HORRIBLE BROKEN DRIVERS !
 
 #define DVR_RING_BUFFER_SIZE (1536*1024)
-#define DVR_READ_TIMEOUT 400 // ms
-#define DVR_READ_RETRY 200 // ms
+#define DVR_READ_TIMEOUT 2000 // ms
+#ifdef DISABLE_RINGBUFFER_IN_RECEIVER
+#define DVR_READ_RETRY 100 // ms
+#else
+#define DVR_READ_RETRY 300 // ms
+#endif
+#define DVR_MAX_EVENTS (DVR_RING_BUFFER_SIZE/TS_SIZE + 1)
 
 class c7x0TSBuffer {
 private:
   int maxFill;
   int cardIndex;
   int f;
+
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+  // Frame Event
+  struct eventBufferItem {
+         enum eTsVideoFrame eventFrameType;
+         uint32_t packetCount;
+         uint32_t lostbytes;
+         };
+
+  eventBufferItem eventBuffer[DVR_MAX_EVENTS];
+  int nextFreeEventBuffer;
+  int firstBufferedEvent;
+
+  enum eTsVideoFrame curEventFrameType;
+  int curEventOffset;
+  bool curEventAvail;
+  bool eventsUsed;
+  uint64_t readBytes;
+#endif
+
+  // Ringbuffer
   uchar *dvrRingBuffer;
   uchar ringBufferLeft[TS_SIZE];
   int ringBufferLeftLength;
   dvr_ring_buffer_state bufferState;
+
   void updateStats() { maxFill = max (maxFill, bufferState.fill); }
 public:
   c7x0TSBuffer(int File, int CardIndex);
   ~c7x0TSBuffer();
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+  uchar *Get(int &Length, int &Pid,eTsVideoFrame &videoFrame);
+  void UseFrameEvents(bool On);
+#else
   uchar *Get(int &Length, int &Pid);
+#endif
+
   };
 
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+void c7x0TSBuffer::UseFrameEvents(bool On)
+{
+  if (On == eventsUsed)
+     return;
+
+  if (On) {
+     // Discard stalling events
+     dvrEvent hwEvent;
+     while (ioctl(f, DVR_GET_EVENT, &hwEvent) > 0)
+           ;
+     }
+  nextFreeEventBuffer = 0;
+  firstBufferedEvent = 0;
+  eventsUsed = On;
+}
+#endif
 
 c7x0TSBuffer::c7x0TSBuffer(int File, int CardIndex)
 {
-  maxFill=0;
+  maxFill = 0;
   f = File;
   cardIndex = CardIndex;
 
-  ringBufferLeftLength=0;
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+  eventsUsed= false;
+
+  readBytes = 0;
+  curEventAvail = false;
+  nextFreeEventBuffer = 0;
+  firstBufferedEvent = 0;
+#endif
+
+  ringBufferLeftLength =0 ;
   memset(&bufferState,0,sizeof(struct dvr_ring_buffer_state));
-  
+
   if ((dvrRingBuffer = (uchar *) mmap(NULL, DVR_RING_BUFFER_SIZE, PROT_READ, MAP_SHARED, f, 0)) == MAP_FAILED) {
      LOG_ERROR;
      }
-   
+
 }
 
 c7x0TSBuffer::~c7x0TSBuffer()
@@ -1278,79 +3331,210 @@ c7x0TSBuffer::~c7x0TSBuffer()
   int lostbytes=0;
   CHECK(ioctl(f,DVR_GET_BYTESLOST,&lostbytes));
   munmap(dvrRingBuffer,DVR_RING_BUFFER_SIZE);
-  isyslog("M7X0 TS-Buffer on device %d has lost %d Bytes during Recording. Buffer Stats %d Bytes (%d%%)", cardIndex, lostbytes,maxFill,(maxFill*100)/DVR_RING_BUFFER_SIZE);
-  
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+  isyslog("M7X0 TS-Buffer on device %d has lost %d of %lld Bytes during Recording. Buffer Stats %d Bytes (%d%%)", cardIndex, lostbytes, readBytes + lostbytes, maxFill, (maxFill*100)/DVR_RING_BUFFER_SIZE);
+#else
+  isyslog("M7X0 TS-Buffer on device %d has lost %d during Recording. Buffer Stats %d Bytes (%d%%)", cardIndex, lostbytes, maxFill, (maxFill*100)/DVR_RING_BUFFER_SIZE);
+#endif
 }
 
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+uchar *c7x0TSBuffer::Get(int &Length,int &Pid, eTsVideoFrame &videoFrame)
+#else
 uchar *c7x0TSBuffer::Get(int &Length,int &Pid)
+#endif
 {
-    
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+  videoFrame = tsVideoFrameUnknown;
+#endif
   if (!bufferState.readable) {
-     int TimeoutMs=0; 
-     do {
-        if ( ioctl(f, DVR_GET_RING_BUFFER_STATE, &bufferState) < 0 ) {
+     int TimeoutMs=0;
+     while (ioctl(f, DVR_GET_RING_BUFFER_STATE, &bufferState) != 0 && TimeoutMs < DVR_READ_TIMEOUT) {
            cCondWait::SleepMs(DVR_READ_RETRY);
            TimeoutMs += DVR_READ_RETRY;
            }
-        else
-           updateStats();
-        } while ( !bufferState.readable && TimeoutMs < DVR_READ_TIMEOUT );
- 
-     if ( TimeoutMs >= DVR_READ_TIMEOUT ) 
+
+     if (!bufferState.readable)
         return NULL;
+
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+     if (eventsUsed) {
+        int r = 0;
+        dvrEvent hwEvent;
+        while ((r = ioctl(f, DVR_GET_EVENT, &hwEvent)) > 0) {
+
+              CHECK(ioctl(f,DVR_GET_BYTESLOST,&eventBuffer[nextFreeEventBuffer].lostbytes));
+              eventBuffer[nextFreeEventBuffer].packetCount=hwEvent.packet_count;
+
+              if (hwEvent.trigger & (HW_EVENT_SEQUENCE_HEADER | HW_EVENT_IFRAME))
+                 eventBuffer[nextFreeEventBuffer].eventFrameType = tsVideoFrameI;
+              else if (hwEvent.trigger & HW_EVENT_PFRAME)
+                 eventBuffer[nextFreeEventBuffer].eventFrameType = tsVideoFrameP;
+              else if (hwEvent.trigger & HW_EVENT_BFRAME)
+                 eventBuffer[nextFreeEventBuffer].eventFrameType = tsVideoFrameB;
+              else {
+                 esyslog("ERROR: Unknown Frame Event (Pid: 0x%x Trigger 0x%x Count 0x%x)!",hwEvent.source, hwEvent.trigger, hwEvent.packet_count);
+                 continue;
+                 }
+
+              // dsyslog("DEBUG: Frame Event (Pid: 0x%x Trigger 0x%x Count 0x%x)!",hwEvent.source, hwEvent.trigger, hwEvent.packet_count);
+              nextFreeEventBuffer++;
+              if (nextFreeEventBuffer != DVR_MAX_EVENTS) {
+                 if (nextFreeEventBuffer == firstBufferedEvent) {
+                    esyslog("ERROR: Event buffer overflowed!");
+                    nextFreeEventBuffer--;
+                    }
+                 }
+              else {
+                 if (firstBufferedEvent)
+                    nextFreeEventBuffer = 0;
+                 else {
+                    esyslog("ERROR: Event buffer overflowed!");
+                    nextFreeEventBuffer--;
+                    }
+                 }
+              }
+
+        if (r < 0)
+           esyslog("ERROR: Read Event failed with %d (errno %d)",r, errno);
+        }
+#endif
+     updateStats();
      }
-     
-  if (ringBufferLeftLength) {
+
+  if (!ringBufferLeftLength && dvrRingBuffer[bufferState.offset] != TS_SYNC_BYTE) {
+     int i;
+     for (i = 1; i < bufferState.readable &&
+                 dvrRingBuffer[bufferState.offset + i] != TS_SYNC_BYTE ; i++)
+         ;
+
+     bufferState.offset += i;
+     bufferState.readable -= i;
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+     readBytes += i;
+     if (curEventAvail) {
+        curEventOffset -= i;
+        curEventAvail = (curEventOffset < 0);
+        }
+#endif
+     esyslog("ERROR: skipped %d bytes to sync on TS packet on device %d", i, cardIndex);
+     }
+
+  // Frame Events are buggy by design. How should one know if the lost bytes are
+  // befor or behind an event.
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+  while (eventsUsed && !curEventAvail && firstBufferedEvent != nextFreeEventBuffer) {
+        curEventOffset = (int) (eventBuffer[firstBufferedEvent].packetCount * 188ULL - readBytes - eventBuffer[firstBufferedEvent].lostbytes);
+
+        curEventFrameType = eventBuffer[firstBufferedEvent].eventFrameType;
+
+        firstBufferedEvent++;
+        if (firstBufferedEvent == DVR_MAX_EVENTS)
+           firstBufferedEvent = 0;
+
+        if (curEventOffset >= 0) {
+           curEventAvail = true;
+           break;
+           }
+
+        esyslog ("ERROR: Event Offset < 0");
+        }
+#endif
+#if 0
+  dvrEvent hwEvent;
+  while (eventsUsed && !eventAvail && ioctl(f, DVR_GET_EVENT, &hwEvent) == 1) {
+        int lostbytes;
+        CHECK(ioctl(f,DVR_GET_BYTESLOST,&lostbytes));
+        eventOffset = (int) (hwEvent.packet_count * 188ULL - readBytes - lostbytes);
+
+        eventAvail = (eventOffset >= 0); // Just in case, if syncing skips an event
+
+        if (hwEvent.trigger & (HW_EVENT_SEQUENCE_HEADER | HW_EVENT_IFRAME))
+           eventFrameType = tsVideoFrameI;
+        else if (hwEvent.trigger & HW_EVENT_PFRAME)
+           eventFrameType = tsVideoFrameP;
+        else if (hwEvent.trigger & HW_EVENT_BFRAME)
+           eventFrameType = tsVideoFrameB;
+        else {
+           esyslog("ERROR: Unknown Frame Event (Pid: 0x%x Trigger 0x%x Count 0x%x)!",hwEvent.source, hwEvent.trigger, hwEvent.packet_count);
+           eventAvail = false;
+           }
+         dsyslog("DEBUG: Frame Event (Pid: 0x%x Trigger 0x%x Count 0x%x)!",hwEvent.source, hwEvent.trigger, hwEvent.packet_count);
+        }
+
+#endif
+  if (ringBufferLeftLength || bufferState.readable < TS_SIZE) {
      int copy = min(TS_SIZE - ringBufferLeftLength, bufferState.readable);
      memcpy(ringBufferLeft+ringBufferLeftLength, dvrRingBuffer + bufferState.offset,copy);
-     
+
      ringBufferLeftLength += copy;
      bufferState.offset += copy;
      bufferState.readable -= copy;
-     
+
      if (ringBufferLeftLength == TS_SIZE) {
-        ringBufferLeftLength=0;
+        ringBufferLeftLength = 0;
         Length = TS_SIZE;
-        Pid = (( *( (int *) ringBufferLeft)) >> 8) & 0x1fff;
+        Pid =   (( *( (int *) ringBufferLeft)) >> 8) & 0x1fff;
+
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+        if (curEventAvail) {
+           if (curEventOffset >= TS_SIZE) {
+              curEventOffset -= TS_SIZE;
+              }
+           else {
+              if (curEventOffset != 0) {
+                 esyslog("ERROR: Frame Event not aligned to TS-Pack bounds (read %lld diff %d)", readBytes, curEventOffset);
+                 }
+              videoFrame = curEventFrameType;
+              curEventAvail = false;
+              }
+           }
+        readBytes += TS_SIZE;
+#endif
         return ringBufferLeft;
         }
-     
+
      return NULL;
      }
-     
-  if (dvrRingBuffer[bufferState.offset] != TS_SYNC_BYTE){
-     int i;
-     for (i = 1; bufferState.readable && 
-                 dvrRingBuffer[bufferState.offset] != TS_SYNC_BYTE ; 
-                    i++, bufferState.readable--, bufferState.offset++)
-         ; 
-   
-     esyslog("ERROR: skipped %d bytes to sync on TS packet on device %d", i, cardIndex);
-     }
-              
-  if (bufferState.readable < TS_SIZE) {
-  
-     if (bufferState.readable) {
-        memcpy(ringBufferLeft, dvrRingBuffer + bufferState.offset, bufferState.readable);
-        ringBufferLeftLength=bufferState.readable;
-        bufferState.readable=0;
-        }
-        
-     return NULL;
-     }
-  
-  // Checks for same PID and TS_SYNC_BYTE  
-  uchar *p =dvrRingBuffer + bufferState.offset;
-  Pid = (*((int *) p ))&0xff1fff00;
-   
-  for (Length = TS_SIZE ; Length <= bufferState.readable - TS_SIZE &&
-        ((*((int*) (p+Length)))&0xff1fff00) == Pid ; Length+=TS_SIZE)
+
+
+
+  // Checks for same PID and TS_SYNC_BYTE
+  uchar *p = dvrRingBuffer + bufferState.offset;
+
+  int pid = getIntUnaligned(p)&0xff1fff00;
+  int l;
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+  const int maxreadable = curEventAvail? min(curEventOffset - 1, bufferState.readable - TS_SIZE): bufferState.readable - TS_SIZE;
+#else
+  const int maxreadable =  bufferState.readable - TS_SIZE;
+#endif
+
+  for (l = TS_SIZE ; l <= maxreadable &&
+        (getIntUnaligned(p+l)&0xff1fff00) == pid; l += TS_SIZE)
       ;
 
-  bufferState.offset+=Length;
-  bufferState.readable-=Length;
-  Pid=(Pid>>8)&0x1fff;
+  bufferState.offset += l;
+  bufferState.readable -= l;
 
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+  if (curEventAvail) {
+     if (curEventOffset >= l) {
+        curEventOffset -= l;
+        }
+     else {
+        if (curEventOffset != 0) {
+           esyslog("ERROR: Frame Event not aligned to TS-Pack bounds (read %lld diff %d)", readBytes, curEventOffset);
+           }
+        videoFrame = curEventFrameType;
+        curEventAvail = false;
+        }
+     }
+  readBytes += l;
+#endif
+
+  Length = l;
+  Pid=(pid>>8)&0x1fff;
   return p;
 }
 
@@ -1358,7 +3542,6 @@ uchar *c7x0TSBuffer::Get(int &Length,int &Pid)
 //M7X0 END AK
 
 // --- cDvbDevice ------------------------------------------------------------
-
 int cDvbDevice::devVideoOffset = -1;
 //M7X0 BEGIN AK
 int cDvbDevice::setTransferModeForDolbyDigital = 3;
@@ -1368,6 +3551,7 @@ cDvbDevice::cDvbDevice(int n)
 //M7X0 BEGIN AK
   audioChannel = 0;
   replayer = NULL;
+  tsreplayer = NULL;
 //M7X0 END AK
   dvbTuner = NULL;
   frontendType = fe_type_t(-1); // don't know how else to initialize this - there is no FE_UNKNOWN
@@ -1385,7 +3569,7 @@ cDvbDevice::cDvbDevice(int n)
   fd_video     = DvbOpen(DEV_DVB_ADAPTER DEV_DVB_VIDEO, n, O_RDWR | O_NONBLOCK, true);
   fd_video_v4l = DvbOpen(DEV_VIDEO, n, O_RDWR, true);
   fd_audio     = DvbOpen(DEV_DVB_ADAPTER DEV_DVB_AUDIO, n, O_RDWR | O_NONBLOCK, true);
-  // fd_stc      = DvbOpen(DEV_DVB_DEMUX,  n, O_RDWR); 
+  // fd_stc      = DvbOpen(DEV_DVB_DEMUX,  n, O_RDWR);
   fd_stc       = -1; // STC doesn't work so don't open a device
 //M7X0 END AK
   // The DVR device (will be opened and closed as needed):
@@ -1423,7 +3607,7 @@ cDvbDevice::cDvbDevice(int n)
 
   // Video format:
 
-  SetVideoFormat(Setup.VideoFormat);
+  SetVideoFormat(eVideoFormat(Setup.VideoFormat));
 
   // We only check the devices that must be present - the others will be checked before accessing them://XXX
 
@@ -1448,6 +3632,8 @@ cDvbDevice::~cDvbDevice()
 //M7X0 BEGIN AK
   if (replayer != NULL)
      delete replayer;
+  if (tsreplayer != NULL)
+     delete tsreplayer;
 //M7X0 END AK
   delete spuDecoder;
   delete dvbTuner;
@@ -1500,11 +3686,11 @@ void cDvbDevice::MakePrimaryDevice(bool On)
 {
   if (HasDecoder()&&On&&!cOsdProvider::Available())
      new cDvbOsdProvider(fd_osd);
-  
+
   if (!On) {
      TurnOffLiveMode(true);
-     // Urgly workaround. But seems to be need in case of Primary-Switch  
-     // Maybe we find a better way. 
+     // Urgly workaround. But seems to be need in case of Primary-Switch
+     // Maybe we find a better way.
      close(fd_video);
      close(fd_audio);
      fd_video    = DvbOpen(DEV_DVB_ADAPTER DEV_DVB_VIDEO,  CardIndex(), O_RDWR | O_NONBLOCK);
@@ -1636,7 +3822,7 @@ uchar *cDvbDevice::GrabImage(int &Size, bool Jpeg, int Quality, int SizeX, int S
 }
 #endif
 
-// Taken from gambler 
+// Taken from gambler
 /*
  * M7X0
  * wow realy wired we have to set the ioctl on /dev/videoX
@@ -1648,71 +3834,54 @@ void cDvbDevice::SetVideoDisplayFormat(eVideoDisplayFormat VideoDisplayFormat)
 {
 
    if (HasDecoder()) {
-      if (Setup.VideoFormat) {	
+      /*
+       * we don't want to force 16/9 in letterbox as in orig code
+       * try it this way
+      *
+      if (Setup.VideoFormat) {
          CHECK(ioctl(fd_video_v4l, M7X0_SET_TV_ASPECT_MODE, M7X0_VIDEO_LETTER_BOX));
-        //CHECK(ioctl(fd_video_set, M7X0_VIDEO_SET_DISPLAY_FORMAT, M7X0_VIDEO_PAN_SCAN));   
+        //CHECK(ioctl(fd_video_set, M7X0_VIDEO_SET_DISPLAY_FORMAT, M7X0_VIDEO_PAN_SCAN));
          dsyslog("DEBUG set setup mode: letterbox");
       }
-      else {
-         switch (VideoDisplayFormat) {
-            case vdfPanAndScan:
-               CHECK(ioctl(fd_video_v4l, M7X0_SET_TV_ASPECT_MODE, M7X0_VIDEO_PAN_SCAN));               
-               dsyslog("DEBUG set mode: pan scan");
-               break;
-            case vdfLetterBox:
-               CHECK(ioctl(fd_video_v4l, M7X0_SET_TV_ASPECT_MODE, M7X0_VIDEO_LETTER_BOX));
-               dsyslog("DEBUG set mode: letterbox");
-               break;
-            case vdfCenterCutOut:
-	       //some test stuff
-               //CHECK(ioctl(fd_video, M7X0_SET_TV_ASPECT_MODE, VIDEO_CENTER_CUT_OUT));
-	       //  struct video_window vid_win = {
-               //          50,50,640,480
-               //  };
-	       //struct video_window *vid_win; 
-               //if(ioctl(fd_video_set, VIDIOCSWIN, &vid_win) < 0){
-               //        perror("ioctl (VIDIOCSWIN)");
-               //      }
-               dsyslog("DEBUG set mode: cut out, not working yet");
-               break;
-         }
-      }
+      else { */
+      switch (VideoDisplayFormat) {
+        case vdfPanAndScan:
+             CHECK(ioctl(fd_video_v4l, M7X0_SET_TV_ASPECT_MODE, M7X0_VIDEO_PAN_SCAN));
+             dsyslog("DEBUG: set mode -> pan scan");
+             break;
+        case vdfLetterBox:
+             CHECK(ioctl(fd_video_v4l, M7X0_SET_TV_ASPECT_MODE, M7X0_VIDEO_LETTER_BOX));
+             dsyslog("DEBUG: set mode -> letterbox");
+             break;
+        case vdfCenterCutOut:
+        //some test stuff
+        //CHECK(ioctl(fd_video, M7X0_SET_TV_ASPECT_MODE, VIDEO_CENTER_CUT_OUT));
+        //  struct video_window vid_win = {
+        //          50,50,640,480
+        //  };
+        //struct video_window *vid_win;
+        //if(ioctl(fd_video_set, VIDIOCSWIN, &vid_win) < 0){
+        //        perror("ioctl (VIDIOCSWIN)");
+        //      }
+             dsyslog("DEBUG set mode: cut out, not working yet");
+             break;
+        }
+      //}
    }
 
-
-#if 0 // Original Code just in case ...
-  cDevice::SetVideoDisplayFormat(VideoDisplayFormat);
-  if (HasDecoder()) {
-     if (Setup.VideoFormat) {
-        CHECK(ioctl(fd_video, VIDEO_SET_DISPLAY_FORMAT, VIDEO_LETTER_BOX));
-        }
-     else {
-        switch (VideoDisplayFormat) {
-          case vdfPanAndScan:
-               CHECK(ioctl(fd_video, VIDEO_SET_DISPLAY_FORMAT, VIDEO_PAN_SCAN));
-               break;
-          case vdfLetterBox:
-               CHECK(ioctl(fd_video, VIDEO_SET_DISPLAY_FORMAT, VIDEO_LETTER_BOX));
-               break;
-          case vdfCenterCutOut:
-               CHECK(ioctl(fd_video, VIDEO_SET_DISPLAY_FORMAT, VIDEO_CENTER_CUT_OUT));
-               break;
-          }
-        }
-     }
-#endif
 }
-// Taken from gambler 
-void cDvbDevice::SetVideoFormat(bool VideoFormat16_9)
+// Taken from gambler
+void cDvbDevice::SetVideoFormat(eVideoFormat VideoFormat)
 {
-/* 
+/*
  *
  * NOTE: m7x0 use avswitch for 16/9 4/3
- * but pan scan, letterbox stuff is done 
+ * but pan scan, letterbox stuff is done
  * on /dev/videoX
  *
  * thx to anonymous
  *
+ * aspect auto format added
  */
    int avs = open("/dev/avswitch", O_WRONLY);
    if(avs== -1) {
@@ -1720,26 +3889,69 @@ void cDvbDevice::SetVideoFormat(bool VideoFormat16_9)
    }
 
    if (HasDecoder()) {
-      if(VideoFormat16_9){
-         dsyslog("DEBUG: set 16/9");
-         CHECK(ioctl(fd_video_v4l, M7X0_SET_TV_ASPECT_RATIO, M7X0_VIDEO_FORMAT_16_9));
-         CHECK(ioctl(avs, AVSWCMD_MODE_16_9, 0));
-      }else{
-         dsyslog("DEBUG: set 4/3");
-         CHECK(ioctl(fd_video_v4l, M7X0_SET_TV_ASPECT_RATIO, M7X0_VIDEO_FORMAT_4_3));
-         CHECK(ioctl(avs, AVSWCMD_MODE_4_3, 0));
+      switch(VideoFormat) {
+	    case vf16_9:
+        	dsyslog("DEBUG: set 16/9");
+        	CHECK(ioctl(fd_video_v4l, M7X0_SET_TV_ASPECT_RATIO, M7X0_VIDEO_FORMAT_16_9));
+        	CHECK(ioctl(avs, AVSWCMD_MODE_16_9, 0));
+		break;
+    	    case vf4_3:
+        	dsyslog("DEBUG: set 4/3");
+        	CHECK(ioctl(fd_video_v4l, M7X0_SET_TV_ASPECT_RATIO, M7X0_VIDEO_FORMAT_4_3));
+        	CHECK(ioctl(avs, AVSWCMD_MODE_4_3, 0));
+		break;
+	    case vfauto:
+		dsyslog("DEBUG: m7x0 auto aspect");
+		CheckStreamAspect();
+		break;
       }
       SetVideoDisplayFormat(eVideoDisplayFormat(Setup.VideoDisplayFormat));
    }
 
    close(avs);
-#if 0 // Original code just in case ....
-  if (HasDecoder()) {
-     CHECK(ioctl(fd_video, VIDEO_SET_FORMAT, VideoFormat16_9 ? VIDEO_FORMAT_16_9 : VIDEO_FORMAT_4_3));
-     SetVideoDisplayFormat(eVideoDisplayFormat(Setup.VideoDisplayFormat));
-     }
-#endif
+    int debugget;
+    CHECK(ioctl(fd_video_v4l, M7X0_GET_TV_ASPECT_RATIO, &debugget));
+    dsyslog("DEBUG: current display format (3=16_9) -> %i", debugget);
+
 //M7X0 END AK
+}
+
+//m7x0 auto aspect
+void cDvbDevice::CheckStreamAspect()
+{
+  int asset, asget;
+  CHECK(ioctl(fd_video_v4l, M7X0_GET_STREAM_ASPECT_RATIO, &asset));
+  CHECK(ioctl(fd_video_v4l, M7X0_GET_TV_ASPECT_RATIO, &asget));
+  //dsyslog("DEBUG: stream as -> %i", asset);
+  if (asset != asget) {
+     if (asset==3) {
+        dsyslog("DEBUG: auto set 16/9");
+        SetVideoFormat(eVideoFormat(1));
+        }
+     else {
+        dsyslog("DEBUG: auto set 4/3");
+        SetVideoFormat(eVideoFormat(0));
+        }
+    }
+}
+
+void cDvbDevice::SetTvSettings(bool settv){
+    dsyslog("DEBUG: set tv settings-> %d", settv);
+}
+
+//m7x0 TvMode fbas svideo
+void cDvbDevice::SetTvMode(bool tvmode){
+    dsyslog("DEBUG: set tv mode -> %d", tvmode);
+    int avs = open("/dev/avswitch", O_WRONLY);
+    if(avs== -1) {
+      esyslog("m7x0 can not open /dev/avswitch");
+    }
+    if(tvmode){
+	CHECK(ioctl(avs, AVSWCMD_TV_SVIDEO, 0));
+    }else{
+	CHECK(ioctl(avs, AVSWCMD_TV_FBAS, 0));
+    }
+    close(avs);
 }
 
 eVideoSystem cDvbDevice::GetVideoSystem(void)
@@ -1764,17 +3976,9 @@ eVideoSystem cDvbDevice::GetVideoSystem(void)
 //M7X0 BEGIN AK
 // If anybody who has access to the driver source reads this.
 // FIX YOUR HORRIBLE BUGGY DRIVERS !!!  AC3 is a only bug
-// Do not work really in any case. 
-// (not even in wavebox workarounds, which even not work in all cases,
-//  are bugs no fixes).
-// AC3 Test Cases: (X := do nothing)
-// Case | ENABLE_ANALOG | ENABLE_AC3
-//------+---------------+------------
-//  1   |      X        |    X       only works after boot 
-//  2   |    false      |   false    (-)
-//  3   |    false      |   true     (-)
-//  4   |    true       |   false    (-)
-//  5   |    true       |   true     (-)
+// Do not work really in all case.
+// (not even in wavebox).
+
 
 
 bool cDvbDevice::SetAudioBypass(bool On)
@@ -1782,7 +3986,7 @@ bool cDvbDevice::SetAudioBypass(bool On)
   if (setTransferModeForDolbyDigital != 1 && setTransferModeForDolbyDigital != 3)
     return false;
  // dsyslog("cDvbDevice: SetAudioBypass %d", On);
-   
+
  // CHECK(ioctl(fd_audio,AUDIO_ENABLE_ANALOG,true));
   //CHECK(ioctl(fd_audio,AUDIO_ENABLE_ANALOG,!On));
   //CHECK(ioctl(fd_audio,AUDIO_ENABLE_AC3,On))
@@ -1797,7 +4001,11 @@ bool cDvbDevice::SetAudioBypass(bool On)
 
 //                            ptAudio        ptVideo        ptPcr        ptTeletext        ptDolby        ptOther
 //M7X0 BEGIN AK
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+dmx_pes_type_t PesTypes[] = { DMX_PES_AUDIO, DMX_PES_VIDEO, DMX_PES_PCR, DMX_PES_TELETEXT, DMX_PES_AUDIO, DMX_PES_VIDEO, DMX_PES_OTHER };
+#else
 dmx_pes_type_t PesTypes[] = { DMX_PES_AUDIO, DMX_PES_VIDEO, DMX_PES_PCR, DMX_PES_TELETEXT, DMX_PES_AUDIO, DMX_PES_OTHER };
+#endif
 //M7X0TODO: Get Dolby working
 bool cDvbDevice::SetPid(cPidHandle *Handle, int Type, bool On)
 {
@@ -1821,17 +4029,31 @@ bool cDvbDevice::SetPid(cPidHandle *Handle, int Type, bool On)
         if (Type == ptAudio || Type == ptDolby){
            // Uglly the driver needs setting exacty this Value
            // Yet another BUG in m7x0-drivers
-           if ((r = ioctl(Handle->handle, DMX_SET_BUFFER_SIZE,0x1e000)) < 0) { 
+           if ((r = ioctl(Handle->handle, DMX_SET_BUFFER_SIZE,0x1e000)) < 0) {
               CHECK(r);
               close(Handle->handle);
               Handle->handle = -1;
               return false;
               }
-           } 
+           }
+        else if (Type == ptVideo)
+           CHECK(ioctl(Handle->handle, DMX_SET_BUFFER_SIZE, 0x100000));
 
         pesFilterParams.pid     = Handle->pid;
-        pesFilterParams.input   = DMX_IN_FRONTEND;
-        pesFilterParams.output  = (Type < ptOther) ? DMX_OUT_DECODER : DMX_OUT_TS_TAP;
+        pesFilterParams.input   = DMX_IN_FRONTEND; //CardIndex() == 0 ? DMX_IN_FRONTEND0 : DMX_IN_FRONTEND1;
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+        if (Type < ptRecVideo) {
+#else
+        if (Type < ptOther) {
+#endif
+           if (ActualDevice() == this)
+              pesFilterParams.output = Type != ptDolby ? DMX_OUT_DECODER0 : DMX_OUT_DECODER1;
+           else
+              pesFilterParams.output = DMX_OUT_DECODER;
+           }
+        else
+           pesFilterParams.output = DMX_OUT_TS_TAP;
+
         pesFilterParams.pes_type= PesTypes[Type < ptOther ? Type : ptOther];
         pesFilterParams.flags   = DMX_IMMEDIATE_START;
 
@@ -1849,19 +4071,28 @@ bool cDvbDevice::SetPid(cPidHandle *Handle, int Type, bool On)
            } while (errnoSave==EBUSY && i<=100);
 
         if (errnoSave != 0){
-           return false; 
+           return false;
            close(Handle->handle);
            Handle->handle = -1;
            }
+
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+        if (Type == ptRecVideo && tsBuffer)
+           tsBuffer->UseFrameEvents(true);
+#endif
         }
      else if (!Handle->used) {
         // For debuging only
         dsyslog("DEBUG: Demux Stopping PID: %u Type: %d", Handle->pid, Type);
         CHECK(ioctl(Handle->handle, DMX_STOP));
-        if (PesTypes[Type] == DMX_PES_VIDEO) // let's only do this once
+        if (Type == ptVideo) // let's only do this once
            SetPlayMode(pmNone); // necessary to switch a PID from DMX_PES_VIDEO/AUDIO to DMX_PES_OTHER
         close(Handle->handle);
         Handle->handle = -1;
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+        if (Type == ptRecVideo && tsBuffer)
+           tsBuffer->UseFrameEvents(false);
+#endif
         }
      }
   return true;
@@ -1881,15 +4112,17 @@ int cDvbDevice::OpenFilter(u_short Pid, u_char Tid, u_char Mask)
 // CRC checking won't work, driver delivers CRC-Invalid sections
 // What the heck is this flag for as additional checking is need with or without it.
      sctFilterParams.flags = DMX_IMMEDIATE_START; //| DMX_CHECK_CRC;
-//M7X0 END AK
+
      sctFilterParams.filter.filter[0] = Tid;
      sctFilterParams.filter.mask[0] = Mask;
+     CHECK(ioctl(f, DMX_SET_BUFFER_SIZE,8192));
+//M7X0 END AK
      if (ioctl(f, DMX_SET_FILTER, &sctFilterParams) >= 0)
         return f;
      else {
 //M7x0 BEGIN AK
         char __errorstr[256];
-        strerror_r(errno,__errorstr,256); 
+        strerror_r(errno,__errorstr,256);
         __errorstr[255]=0;
         esyslog("ERROR: can't set filter (pid=%d, tid=%02X, mask=%02X): %s", Pid, Tid, Mask,__errorstr);
 //M7x0 END AK
@@ -1903,27 +4136,28 @@ int cDvbDevice::OpenFilter(u_short Pid, u_char Tid, u_char Mask)
 
 void cDvbDevice::TurnOffLiveMode(bool LiveView)
 {
-  if (LiveView) {
-     // Avoid noise while switching:
 //M7X0 BEGIN AK
-     CHECK(ioctl(fd_audio, AUDIO_STOP, 0));
-     CHECK(ioctl(fd_video, VIDEO_STOP, 0));
-
-     }
 
   // Turn off live PIDs:
 // Live Pids get Special PID-slots so don't detach any receivers
-#if 0 
+#if 0
   DetachAll(pidHandles[ptAudio].pid);
   DetachAll(pidHandles[ptVideo].pid);
   DetachAll(pidHandles[ptPcr].pid);
   DetachAll(pidHandles[ptTeletext].pid);
 #endif
+  if (LiveView) {
+     // Avoid noise while switching:
+     CHECK(ioctl(fd_audio, AUDIO_STOP, 0));
+     CHECK(ioctl(fd_video, VIDEO_STOP, 1));
+     }
   DelPid(pidHandles[ptAudio].pid, ptAudio);
   DelPid(pidHandles[ptVideo].pid, ptVideo);
   DelPid(pidHandles[ptPcr].pid, ptPcr);
   DelPid(pidHandles[ptTeletext].pid, ptTeletext);
   DelPid(pidHandles[ptDolby].pid, ptDolby);
+
+
 //M7X0 END AK
 }
 
@@ -1940,8 +4174,8 @@ bool cDvbDevice::ProvidesTransponder(const cChannel *Channel) const
 {
   return ProvidesSource(Channel->Source()) && (!cSource::IsSat(Channel->Source()) || !Setup.DiSEqC || Diseqcs.Get(Channel->Source(), Channel->Frequency(), Channel->Polarization()));
 }
-
-bool cDvbDevice::ProvidesChannel(const cChannel *Channel, int Priority, bool *NeedsDetachReceivers) const
+//M7X0 BEGIN AK
+bool cDvbDevice::ProvidesChannel(const cChannel *Channel, int Priority, bool *NeedsDetachReceivers, bool forTransferer) const
 {
   bool result = false;
   bool hasPriority = Priority < 0 || Priority > this->Priority();
@@ -1950,7 +4184,8 @@ bool cDvbDevice::ProvidesChannel(const cChannel *Channel, int Priority, bool *Ne
   if (ProvidesSource(Channel->Source()) && ProvidesCa(Channel)) {
      result = hasPriority;
      if (Priority >= 0 && Receiving(true)) {
-        if (dvbTuner->IsTunedTo(Channel)) {
+        if (dvbTuner->IsTunedTo(Channel) && (forTransferer || FreeReceiverSlot())) {
+//M7X0 END AK
            if (Channel->Vpid() && !HasPid(Channel->Vpid()) || Channel->Apid(0) && !HasPid(Channel->Apid(0))) {
 #ifdef DO_MULTIPLE_RECORDINGS
 #ifndef DO_MULTIPLE_CA_CHANNELS
@@ -1984,7 +4219,7 @@ bool cDvbDevice::IsTunedToTransponder(const cChannel *Channel)
 }
 
 //M7X0 BEGIN AK
-// Wie do not need a 
+// Wie do not need a
 bool cDvbDevice::SetChannelDevice(const cChannel *Channel, bool LiveView)
 {
   bool DoTune = !dvbTuner->IsTunedTo(Channel);
@@ -1995,7 +4230,7 @@ bool cDvbDevice::SetChannelDevice(const cChannel *Channel, bool LiveView)
                             || LiveView // for a new live view the old PIDs need to be turned off
                             );
 
-  
+
   bool TurnOnLivePIDs = HasDecoder() && LiveView;
 
 #ifndef DO_MULTIPLE_RECORDINGS
@@ -2005,8 +4240,11 @@ bool cDvbDevice::SetChannelDevice(const cChannel *Channel, bool LiveView)
 
   // Turn off live PIDs if necessary:
 
-  if (TurnOffLivePIDs)
+  if (TurnOffLivePIDs) {
+     if (TurnOnLivePIDs)
+        CHECK(ioctl(fd_audio, AUDIO_SET_MUTE, true));
      TurnOffLiveMode(LiveView);
+     }
 
   // Set the tuner:
 
@@ -2019,13 +4257,12 @@ bool cDvbDevice::SetChannelDevice(const cChannel *Channel, bool LiveView)
   if (EITScanner.UsesDevice(this)) //XXX
      return true;
 
+  // Wait for tuner lock:
+  // This seems to be need sometimes on M7x0
+//  if (!HasLock(-1))
+//      esyslog("ERROR: Cannot get Tuner-Lock!");
   // PID settings:
 
-  //Wait for tuner lock: M740AV needs this befor setting PIDS 
-  if (!HasLock(-1))
-     esyslog("ERROR: Cannot get Tuner-Lock!");
-
-  
   if (TurnOnLivePIDs) {
 
      SetAudioBypass(false);
@@ -2034,22 +4271,22 @@ bool cDvbDevice::SetChannelDevice(const cChannel *Channel, bool LiveView)
         return false;
         }
 
-     //XXX quick workaround for additional live audio PIDs:
-     if (ciHandler) {
-        ciHandler->SetPid(Channel->Apid(1), true);
-        ciHandler->SetPid(Channel->Dpid(0), true);
-        }
- 
      if (IsPrimaryDevice())
         AddPid(Channel->Tpid(), ptTeletext);
-     
-     CHECK(ioctl(fd_audio, AUDIO_SET_AV_SYNC, Channel->Vpid()>0));
-     CHECK(ioctl(fd_audio, AUDIO_PLAY,0));
-     CHECK(ioctl(fd_video, VIDEO_PLAY,0));
-     }
- 
-  return true;
 
+     if (Channel->Vpid() > 0) {
+        CHECK(ioctl(fd_audio, AUDIO_SET_AV_SYNC, 1));
+        CHECK(ioctl(fd_video, VIDEO_PLAY,0));
+        }
+     else {
+        CHECK(ioctl(fd_audio, AUDIO_SET_AV_SYNC, 0));
+        }
+
+     CHECK(ioctl(fd_audio, AUDIO_PLAY,0));
+     CHECK(ioctl(fd_audio, AUDIO_SET_MUTE, false));
+
+     }
+  return true;
 }
 //M7X0 END AK
 
@@ -2083,25 +4320,20 @@ void cDvbDevice::SetVolumeDevice(int Volume)
 
 void cDvbDevice::SetDigitalAudioDevice(bool On)
 {
-  //dsyslog("cDvbDevice: Set Digital Audio %d", On);
+  dsyslog("cDvbDevice: Set Digital Audio %d", On);
   if (digitalAudio != On) {
-        
+
      digitalAudio = On;
-    
-     // CHECK(ioctl(fd_audio,AUDIO_ENABLE_AC3,On))
- /*    if (On)
+
+     //CHECK(ioctl(fd_audio,AUDIO_ENABLE_AC3,On))
+     if (On)
         //Is this right? Does this call select the decoder for AC3?
         CHECK(ioctl(fd_audio,AUDIO_ENABLE_AC3,true))
-     else
+     else {
         // Maybe need for normal Analog mode (?)
-        CHECK(ioctl(fd_audio,AUDIO_ENABLE_AC3,false))*/
-  /*   if (On)
-        //Is this right? Does this call select the decoder for AC3?
-        CHECK(ioctl(fd_audio,AUDIO_ENABLE_AC3,CardIndex()))
-     else
-        // Maybe need for normal Analog mode (?)
-        CHECK(ioctl(fd_audio,AUDIO_ENABLE_AC3,0))*/
-              
+        CHECK(ioctl(fd_audio,AUDIO_ENABLE_AC3,false));
+        CHECK(ioctl(fd_audio,AUDIO_STEERING, audioChannel));
+        }
      SetVolumeDevice(IsMute() ? 0 : CurrentVolume());
      }
 }
@@ -2113,22 +4345,37 @@ void cDvbDevice::SetTransferModeForDolbyDigital(int Mode)
 }
 
 
-void cDvbDevice::SetAudioTrackDevice(eTrackType Type)
+void cDvbDevice::SetAudioTrackDevice(eTrackType Type, const tTrackId *TrackId)
 {
-  const tTrackId *TrackId = GetTrack(Type);
+  bool startStopAudio = true;
+  if (!TrackId)
+     TrackId = GetTrack(Type);
+  else
+     startStopAudio = false;
   if (TrackId && TrackId->id) {
      SetAudioBypass(false);
      if (IS_AUDIO_TRACK(Type) || (IS_DOLBY_TRACK(Type) && SetAudioBypass(true))) {
         if (pidHandles[ptAudio].pid && pidHandles[ptAudio].pid != TrackId->id) {
-           CHECK(ioctl(fd_audio,AUDIO_STOP));
-                      
+           if (startStopAudio)
+              CHECK(ioctl(fd_audio,AUDIO_STOP))
+
+           if (ciHandler)
+              ciHandler->SetPid(pidHandles[ptAudio].pid, false);
+
            pidHandles[ptAudio].pid = TrackId->id;
-           SetPid(&pidHandles[ptAudio], ptAudio, true);
-           CHECK(ioctl(fd_audio,AUDIO_PLAY));
-           
-           if (IS_DOLBY_TRACK(Type)){
+           SetPid(&pidHandles[ptAudio],IS_DOLBY_TRACK(Type)?ptDolby:ptAudio, true);
+
+           if (ciHandler) {
+              ciHandler->SetPid(pidHandles[ptAudio].pid, true);
+              ciHandler->StartDecrypting();
+              }
+
+           if (startStopAudio)
+              CHECK(ioctl(fd_audio,AUDIO_PLAY))
+
+           if (IS_DOLBY_TRACK(Type) && startStopAudio) {
               int diff; int stat;
-              if (pidHandles[ptPcr].handle >= 0) { 
+              if (pidHandles[ptPcr].handle >= 0) {
                  stat = ioctl(pidHandles[ptPcr].handle,DMX_GET_AUDIO_SYNC_DIFF,&diff);
                  dsyslog("cDvbDevice DEBUG: AC3 Audio Snyc Diff ioctl-Status %d Difference %d", stat, diff);
                  }
@@ -2143,6 +4390,24 @@ void cDvbDevice::SetAudioTrackDevice(eTrackType Type)
         }
      }
 }
+void cDvbDevice::StartLiveView(bool On, bool AudioOnly) {
+  if (playMode != pmTransferer && playMode != pmTransfererAudioOnly)
+     return;
+  if (On) {
+     if (!AudioOnly) {
+        CHECK(ioctl(fd_audio, AUDIO_SET_AV_SYNC, playMode == pmTransferer));
+        CHECK(ioctl(fd_video, VIDEO_PLAY,0));
+        }
+
+     CHECK(ioctl(fd_audio, AUDIO_PLAY,0));
+     return;
+     }
+
+  if (!AudioOnly)
+     CHECK(ioctl(fd_video, VIDEO_STOP,1));
+
+  CHECK(ioctl(fd_audio, AUDIO_STOP,0));
+}
 //M7X0 END AK
 
 bool cDvbDevice::CanReplay(void) const
@@ -2155,14 +4420,14 @@ bool cDvbDevice::CanReplay(void) const
 }
 
 //M7X0 BEGIN AK
-//M7X0TODO: Get other playmodes working 
+//M7X0TODO: Get other playmodes working
 bool cDvbDevice::SetPlayMode(ePlayMode PlayMode)
 {
   if (PlayMode != pmExtern_THIS_SHOULD_BE_AVOIDED && fd_video < 0 && fd_audio < 0) {
      // reopen the devices
      fd_video = DvbOpen(DEV_DVB_ADAPTER DEV_DVB_VIDEO,  CardIndex(), O_RDWR | O_NONBLOCK);
      fd_audio = DvbOpen(DEV_DVB_ADAPTER DEV_DVB_AUDIO,  CardIndex(), O_RDWR | O_NONBLOCK);
-     SetVideoFormat(Setup.VideoFormat);
+     SetVideoFormat(eVideoFormat(Setup.VideoFormat));
      }
 
   switch (PlayMode) {
@@ -2173,40 +4438,55 @@ bool cDvbDevice::SetPlayMode(ePlayMode PlayMode)
             delete replayer;
             replayer=NULL;
          }
+         if (tsreplayer != NULL) {
+            delete tsreplayer;
+            tsreplayer=NULL;
+         }
          break;
     case pmAudioVideo:
-
-         if (playMode == pmNone)
-            TurnOffLiveMode(true);
+    case pmAudioOnlyBlack:
+    case pmAudioOnly:
+    case pmVideoOnly:
+         if (tsreplayer != NULL) {
+            delete tsreplayer;
+            tsreplayer=NULL;
+         }
+         //if (playMode == pmNone)
+         TurnOffLiveMode(true);
          CHECK(ioctl(fd_audio, AUDIO_STOP,0));
          CHECK(ioctl(fd_video, VIDEO_STOP, 1));
-			if(replayer == NULL){
-				replayer = new c7x0Replayer(this,fd_video,fd_audio,CardIndex());
-			}
-			CHECK(ioctl(fd_audio, AUDIO_SET_AV_SYNC,true));
-			CHECK(ioctl(fd_audio, AUDIO_PLAY,0));
-			CHECK(ioctl(fd_video, VIDEO_PLAY,0));
+         if (replayer == NULL){
+            replayer = new c7x0Replayer(this);
+            }
+         else
+            replayer->Reset();
          break;
-	 case pmAudioOnlyBlack:
-    case pmAudioOnly:
-         CHECK(ioctl(fd_video, VIDEO_SET_BLANK, true));
-         CHECK(ioctl(fd_audio, AUDIO_STOP, true));
-         CHECK(ioctl(fd_audio, AUDIO_SET_AV_SYNC, false));
-         CHECK(ioctl(fd_audio, AUDIO_PLAY));
-         CHECK(ioctl(fd_video, VIDEO_SET_BLANK, false));
-         break;
-    case pmVideoOnly:
-         CHECK(ioctl(fd_video, VIDEO_SET_BLANK, true));
-         CHECK(ioctl(fd_video, VIDEO_STOP, true));
-         CHECK(ioctl(fd_audio, AUDIO_SET_AV_SYNC, false));
-         CHECK(ioctl(fd_audio, AUDIO_PLAY));
-         CHECK(ioctl(fd_video, VIDEO_PLAY));
+
+    case pmTsAudioVideo:
+    case pmTsAudioOnlyBlack:
+    case pmTsAudioOnly:
+    case pmTsVideoOnly:
+         if (replayer != NULL) {
+            delete replayer;
+            replayer=NULL;
+         }
+         //if (playMode == pmNone)
+         TurnOffLiveMode(true);
+         CHECK(ioctl(fd_audio, AUDIO_STOP,0));
+         CHECK(ioctl(fd_video, VIDEO_STOP, 1));
+         if (tsreplayer == NULL){
+            tsreplayer = new c7x0TsReplayer(this);
+            }
+         else
+            tsreplayer->Reset();
          break;
     case pmExtern_THIS_SHOULD_BE_AVOIDED:
-         return false; 
-         close(fd_video);
-         close(fd_audio);
-         fd_video = fd_audio = -1;
+         return false;
+         break;
+
+    case pmTransferer:
+    case pmTransfererAudioOnly:
+         TurnOffLiveMode(true);
          break;
     }
   playMode = PlayMode;
@@ -2234,17 +4514,26 @@ void cDvbDevice::TrickSpeed(int Speed, bool UseFastForward)
 {
   if (replayer != NULL)
      replayer->TrickSpeed(Speed,UseFastForward);
+  else if (tsreplayer != NULL)
+     tsreplayer->TrickSpeed(Speed,UseFastForward);
 }
 
 void cDvbDevice::Clear(void)
 {
   if (replayer != NULL)
      replayer->Clear();
+  else if (tsreplayer != NULL)
+     tsreplayer->Clear();
   cDevice::Clear();
 }
 
 void cDvbDevice::Play(void)
 {
+  if (replayer != NULL)
+     replayer->Play();
+  else if (tsreplayer != NULL)
+     tsreplayer->Play();
+#if 0
   CHECK(ioctl(fd_video, VIDEO_STOP, 0));
   CHECK(ioctl(fd_audio, AUDIO_STOP, 0));
   CHECK(ioctl(fd_audio, AUDIO_SET_MUTE, false));
@@ -2257,17 +4546,22 @@ void cDvbDevice::Play(void)
   else {
      if (fd_audio >= 0) {
         CHECK(ioctl(fd_audio, AUDIO_SET_AV_SYNC, true));
-        CHECK(ioctl(fd_audio, AUDIO_PLAY,0)); 
+        CHECK(ioctl(fd_audio, AUDIO_PLAY,0));
         }
      if (fd_video >= 0)
         CHECK(ioctl(fd_video, VIDEO_PLAY,0));
      }
-  
+#endif
   cDevice::Play();
 }
 
 void cDvbDevice::Freeze(void)
 {
+  if (replayer != NULL)
+     replayer->Freeze();
+  else if (tsreplayer != NULL)
+     tsreplayer->Freeze();
+#if 0
   if (playMode == pmAudioOnly || playMode == pmAudioOnlyBlack) {
      if (fd_audio >= 0)
         CHECK(ioctl(fd_audio, AUDIO_PAUSE));
@@ -2283,6 +4577,7 @@ void cDvbDevice::Freeze(void)
   if (fd_video >= 0) {
      CHECK(ioctl(fd_video, VIDEO_STOP,0));
      }
+#endif
 #endif
   cDevice::Freeze();
 }
@@ -2360,13 +4655,15 @@ void cDvbDevice::StillPicture(const uchar *Data, int Length)
            else
               i++;
            }
-     CHECK(ioctl(fd_video, VIDEO_FAST_FORWARD, 1));
+     CHECK(ioctl(fd_audio, AUDIO_SET_MUTE, true));
+     CHECK(ioctl(fd_video, VIDEO_FAST_FORWARD, 1))
      WriteAllOrNothing(fd_video,(const uchar*) buf,blen, 1000, 10);;
      free(buf);
      }
   else {
      // non-PES data
-     CHECK(ioctl(fd_video, VIDEO_FAST_FORWARD, 1));
+     CHECK(ioctl(fd_audio, AUDIO_SET_MUTE, true));
+     CHECK(ioctl(fd_video, VIDEO_FAST_FORWARD, 1))
      WriteAllOrNothing(fd_video, Data,Length, 1000, 10);
      }
 }
@@ -2375,6 +4672,8 @@ bool cDvbDevice::Poll(cPoller &Poller, int TimeoutMs)
 {
   if (replayer!=NULL)
      return replayer->Poll(Poller, TimeoutMs);
+  else if (tsreplayer!=NULL)
+     return tsreplayer->Poll(Poller, TimeoutMs);
   return false;
 }
 
@@ -2383,19 +4682,46 @@ bool cDvbDevice::Flush(int TimeoutMs)
   //TODO actually this function should wait until all buffered data has been processed by the card, but how?
   if (replayer!=NULL)
      return replayer->Flush(TimeoutMs);
+  else if (tsreplayer!=NULL)
+     return tsreplayer->Flush(TimeoutMs);
   return true;
 }
 
 int cDvbDevice::PlayPes(const uchar *Data, int Length, bool VideoOnly)
 {
-	cMutexLock MutexLock(&mutexCurrentAudioTrack);
-	 if (replayer!=NULL)
+  // cMutexLock MutexLock(&mutexCurrentAudioTrack);
+  if (replayer!=NULL)
      return replayer->PlayPes(Data,Length,VideoOnly);
-	 
+
 	esyslog("PlayPes called without replayer");
 	return -1;
 }
 
+int cDvbDevice::PlayTs(const uchar *Data, int Length)
+{
+  // cMutexLock MutexLock(&mutexCurrentAudioTrack);
+  if (tsreplayer!=NULL)
+     return tsreplayer->PlayTs(Data,Length);
+
+  esyslog("PlayTs called without replayer");
+  return -1;
+}
+
+void cDvbDevice::SetTsReplayPids(int pmtPid, int videoPid)
+{
+  if (tsreplayer!=NULL)
+     tsreplayer->SetPids(pmtPid, videoPid);
+  else
+     esyslog("SetTsReplayPids called without replayer");
+}
+
+int cDvbDevice::GetTsReplayVideoPid(void)
+{
+  if (tsreplayer!=NULL)
+     return tsreplayer->GetVideoPid();
+  esyslog("GetTsReplayVideoPid called without replayer");
+  return 0;
+}
 int cDvbDevice::PlayVideo(const uchar *Data, int Length)
 {
 	esyslog("PlayVideo should not be called any more");
@@ -2409,15 +4735,20 @@ int cDvbDevice::PlayAudio(const uchar *Data, int Length, uchar Id)
 }
 
 
-// In orginal 2 MBs are used as buffer. 
+// In orginal 2 MBs are used as buffer.
 // Due to restrictions of mmaping on the dvr-device
 // Ring-Buffer-Size is know fixed to 1536 KBs.
 bool cDvbDevice::OpenDvr(void)
 {
   CloseDvr();
-  fd_dvr = DvbOpen(DEV_DVB_ADAPTER DEV_DVB_DVR, CardIndex(), O_RDONLY | O_NONBLOCK, true);
+  fd_dvr = DvbOpen(DEV_DVB_ADAPTER DEV_DVB_DVR, CardIndex(), O_RDONLY | O_NONBLOCK , true);
   if (fd_dvr >= 0)
      tsBuffer = new c7x0TSBuffer(fd_dvr, CardIndex() + 1);
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+  if (pidHandles[ptRecVideo].pid)
+     tsBuffer->UseFrameEvents(true);
+#endif
+
   return fd_dvr >= 0;
 }
 //M7X0 END AK
@@ -2435,10 +4766,18 @@ void cDvbDevice::CloseDvr(void)
 //M7X0 BEGIN AK
 // Seems to perform much better, if more than one ts packet (with the same PID)
 // is deliviered in one call
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+bool cDvbDevice::GetTSPackets(uchar *&Data, int &Length, int &Pid, eTsVideoFrame &videoFrame)
+#else
 bool cDvbDevice::GetTSPackets(uchar *&Data, int &Length, int &Pid)
+#endif
 {
   if (tsBuffer) {
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+     Data = tsBuffer->Get(Length, Pid, videoFrame);
+#else
      Data = tsBuffer->Get(Length, Pid);
+#endif
      return true;
      }
   return false;

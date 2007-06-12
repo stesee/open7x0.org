@@ -4,7 +4,7 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: skinclassic.h 1.2 2005/01/02 14:38:56 kls Exp $
+ * $Id$
  */
 
 #ifndef __SKINCLASSIC_H

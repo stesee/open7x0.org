@@ -4,7 +4,7 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: nit.c 1.12 2006/05/27 15:35:16 kls Exp $
+ * $Id$
  */
 
 #include "nit.h"
@@ -154,7 +154,8 @@ void cNitFilter::Process(u_short Pid, u_char Tid, const u_char *Data, int Length
                                      }
                                   }
                               }
-                           Channel->SetSatTransponderData(Source, Frequency, Polarization, SymbolRate, CodeRate);
+                           if (ISTRANSPONDER(cChannel::Transponder(Frequency, Polarization), Transponder())) // only modify channels if we're actually receiving this transponder
+                              Channel->SetSatTransponderData(Source, Frequency, Polarization, SymbolRate, CodeRate);
                            }
                         found = true;
                         }
@@ -203,7 +204,8 @@ void cNitFilter::Process(u_short Pid, u_char Tid, const u_char *Data, int Length
                                      }
                                   }
                               }
-                           Channel->SetCableTransponderData(Source, Frequency, Modulation, SymbolRate, CodeRate);
+                           if (ISTRANSPONDER(Frequency / 1000, Transponder())) // only modify channels if we're actually receiving this transponder
+                              Channel->SetCableTransponderData(Source, Frequency, Modulation, SymbolRate, CodeRate);
                            }
                         found = true;
                         }
@@ -259,7 +261,8 @@ void cNitFilter::Process(u_short Pid, u_char Tid, const u_char *Data, int Length
                                      }
                                   }
                               }
-                           Channel->SetTerrTransponderData(Source, Frequency, Bandwidth, Constellation, Hierarchy, CodeRateHP, CodeRateLP, GuardInterval, TransmissionMode);
+                           if (ISTRANSPONDER(Frequency / 1000000, Transponder())) // only modify channels if we're actually receiving this transponder
+                              Channel->SetTerrTransponderData(Source, Frequency, Bandwidth, Constellation, Hierarchy, CodeRateHP, CodeRateLP, GuardInterval, TransmissionMode);
                            }
                         found = true;
                         }

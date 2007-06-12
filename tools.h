@@ -4,7 +4,7 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: tools.h 1.93 2006/04/16 10:40:45 kls Exp $
+ * $Id$
  */
 
 #ifndef __TOOLS_H
@@ -15,34 +15,83 @@
 #include <fcntl.h>
 #include <poll.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <syslog.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <endian.h>
+#include <byteswap.h>
 
 typedef unsigned char uchar;
-typedef unsigned long long int uint64;
+#define uint64 uint64_t // for compatibility - TODO remove in version 1.5
 
 extern int SysLogLevel;
 
 //M7X0 BEGIN AK
+#if BYTE_ORDER == BIG_ENDIAN
+#define BE2HOST(a) (a)
+#define HOST2BE(a) (a)
+#define LE2HOST(a) swapBytes(a)
+#define HOST2LE(a) swapBytes(a)
+#else
+#define LE2HOST(a) (a)
+#define HOST2LE(a) (a)
+#define BE2HOST(a) swapBytes(a)
+#define HOST2BE(a) swapBytes(a)
+#endif
+#define putIntUnalignedBE putIntUnaligned  // Big Endian
+#define getIntUnalignedBE getIntUnaligned
+#define putIntUnaligned(a,b) put_unaligned((int32_t) (b), (int32_t *)(a))
+#define getIntUnaligned(a) get_unaligned((int32_t *) (a))
+/*inline void putIntUnaligned(uchar *const p, int32_t i)
+{
+  asm ("usw %[i],%[m]\n\t"
+       : [m] "=m" (* ((int32_t *const) p))
+       : [i] "r" (i) );
+}
+
+inline int32_t getIntUnaligned(const uchar *const p) {
+  int32_t ret;
+  asm ("ulw %[ret],%[m]\n\t"
+       : [ret] "=&r" (ret)
+       : [m] "m" (*p));
+  return ret;
+}*/
+#if 0
 // m7x0 does not support syslog correct yet
 //M7X0TODO: Get syslog working ;)
-#define esyslog(a...) void( (SysLogLevel > 0) ? void(fprintf(stderr,a)), void(fprintf(stderr,"\n")) : void() )
-#define isyslog(a...) void( (SysLogLevel > 1) ? void(fprintf(stderr,a)), void(fprintf(stderr,"\n")) : void() )
-#define dsyslog(a...) void( (SysLogLevel > 2) ? void(fprintf(stderr,a)), void(fprintf(stderr,"\n")) : void() )
+#define esyslog(a...) void( (SysLogLevel > 0) ? void(fprintf(stderr,a)), void(fprintf(stderr,"\n")), void(fflush(stderr)) : void() )
+#define isyslog(a...) void( (SysLogLevel > 1) ? void(fprintf(stderr,a)), void(fprintf(stderr,"\n")), void(fflush(stderr)) : void() )
+#define dsyslog(a...) void( (SysLogLevel > 2) ? void(fprintf(stderr,a)), void(fprintf(stderr,"\n")), void(fflush(stderr)) : void() )
+#endif
+// Syslog reactivated
+#define esyslog(a...) void( (SysLogLevel > 0) ? syslog_with_tid(LOG_ERR,   a) : void() )
+#define isyslog(a...) void( (SysLogLevel > 1) ? syslog_with_tid(LOG_INFO,  a) : void() )
+#define dsyslog(a...) void( (SysLogLevel > 2) ? syslog_with_tid(LOG_DEBUG, a) : void() )
 
-#define LOG_ERROR       { char __errorstr[256]; \
-									strerror_r(errno,__errorstr,256); \
-									__errorstr[255]=0; \
-									esyslog("ERROR (%s,%d): %s", __FILE__, __LINE__,__errorstr);  }
-#define LOG_ERROR_STR(s) {  char __errorstr[256]; \
-									strerror_r(errno,__errorstr,256); \
-									__errorstr[255]=0; \
-									esyslog("ERROR: %s: %s", s,__errorstr); }
+// Errno should survive this
+#define LOG_ERROR       {  int __errno_save = errno; \
+                           char __errorstr[256]; \
+                           strerror_r(__errno_save,__errorstr,256); \
+                           __errorstr[255]=0; \
+                           esyslog("ERROR (%s,%d): %s", __FILE__, __LINE__,__errorstr);  \
+                           errno = __errno_save; }
+
+#define LOG_ERROR_STR(s) {  int __errno_save = errno; \
+                           char __errorstr[256]; \
+                           strerror_r(__errno_save,__errorstr,256); \
+                           __errorstr[255]=0; \
+                           esyslog("ERROR: %s: %s", s,__errorstr); \
+                           errno = __errno_save; }
 
 
+
+#if 0
+#define LOG_ERROR         { esyslog("ERROR (%s,%d): %m", __FILE__, __LINE__); }
+#define LOG_ERROR_STR(s)  { esyslog("ERROR: %s: %m", s); }
+#endif
 #define SECSINDAY  86400
 
 #define KILOBYTE(n) ((n) * 1024)
@@ -53,8 +102,18 @@ extern int SysLogLevel;
 #define DELETENULL(p) (delete (p), p = NULL)
 
 #define CHECK(s) { if ((s) < 0) LOG_ERROR } // used for 'ioctl()' calls
-#define FATALERRNO (errno && errno != EAGAIN && errno != EINTR)
-//M7X0 END AK
+#define FATALERRNO (errno && errno != EAGAIN && errno != EINTR && errno != EBUSY)
+// Getting EBUSY in many cases on m7x0 where this should not break things.
+
+template<class T> inline T swapBytes(T a) {
+  switch(sizeof(T)) {
+    case 8: return bswap_64(a);
+    case 4: return bswap_32(a);
+    case 2: return bswap_16(a);
+    default: return a;
+    }
+  }
+
 
 #ifndef __STL_CONFIG_H // in case some plugin needs to use the STL
 template<class T> inline T min(T a, T b) { return a <= b ? a : b; }
@@ -63,7 +122,10 @@ template<class T> inline int sgn(T a) { return a < 0 ? -1 : a > 0 ? 1 : 0; }
 template<class T> inline void swap(T &a, T &b) { T t = a; a = b; b = t; }
 #endif
 
+#ifndef OSDPAINTER
 void syslog_with_tid(int priority, const char *format, ...) __attribute__ ((format (printf, 2, 3)));
+#endif
+//M7X0 END AK
 
 #define BCDCHARTOINT(x) (10 * ((x & 0xF0) >> 4) + (x & 0xF))
 int BCD2INT(int x);
@@ -77,7 +139,7 @@ template<class T> inline T get_unaligned(T *p)
   return ((s *)p)->v;
 }
 
-template<class T> inline void put_unaligned(unsigned int v, T* p)
+template<class T> inline void put_unaligned(/*unsigned int*/ T v, T* p)
 {
   struct s { T v; } __attribute__((packed));
   ((s *)p)->v = v;
@@ -128,12 +190,16 @@ char *ReadLink(const char *FileName); ///< returns a new string allocated on the
 bool SpinUpDisk(const char *FileName);
 void TouchFile(const char *FileName);
 time_t LastModifiedTime(const char *FileName);
+//M7X0 BEGIN AK
+#ifndef OSDPAINTER
 cString WeekDayName(int WeekDay);
 cString WeekDayName(time_t t);
 cString DayDateTime(time_t t = 0);
 cString TimeToString(time_t t);
 cString DateString(time_t t);
 cString TimeString(time_t t);
+#endif
+//M7X0 END
 uchar *RgbToJpeg(uchar *Mem, int Width, int Height, int &Size, int Quality = 100);
     ///< Converts the given Memory to a JPEG image and returns a pointer
     ///< to the resulting image. Mem must point to a data block of exactly
@@ -170,13 +236,13 @@ public:
 
 class cTimeMs {
 private:
-  uint64 begin;
+  uint64_t begin;
 public:
   cTimeMs(void);
-  static uint64 Now(void);
+  static uint64_t Now(void);
   void Set(int Ms = 0);
   bool TimedOut(void);
-  uint64 Elapsed(void);
+  uint64_t Elapsed(void);
   };
 
 class cReadLine {
@@ -211,9 +277,13 @@ private:
 public:
   cReadDir(const char *Directory);
   ~cReadDir();
+//M7X0 BEGIN AK
+  void cReadDir::Close(void);
+//M7X0 End AK
   bool Ok(void) { return directory != NULL; }
   struct dirent *Next(void);
   };
+
 
 class cFile {
 private:
@@ -263,6 +333,13 @@ private:
   size_t written;
   size_t totwritten;
   int FadviseDrop(off_t Offset, off_t Len);
+//M7X0 BEGIN AK
+#ifdef USE_DIRECT_IO
+  bool directIOused;
+  int blockSize;
+  int FallBackFromDirectIO(void);
+#endif
+//M7X0 END AK
 public:
   cUnbufferedFile(void);
   ~cUnbufferedFile();
@@ -272,6 +349,7 @@ public:
   off_t Seek(off_t Offset, int Whence);
   ssize_t Read(void *Data, size_t Size);
   ssize_t Write(const void *Data, size_t Size);
+  int Truncate(off_t Length);
   static cUnbufferedFile *Create(const char *FileName, int Flags, mode_t Mode = DEFFILEMODE);
   };
 

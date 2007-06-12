@@ -4,12 +4,13 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: font.h 1.12 2006/02/05 13:46:36 kls Exp $
+ * $Id$
  */
 
 #ifndef __FONT_H
 #define __FONT_H
 
+#include <stdint.h>
 #include <stdlib.h>
 
 enum eDvbFont {
@@ -19,20 +20,24 @@ enum eDvbFont {
 #define eDvbFontSize (fontSml + 1)
   };
 
+//M7X0 BEGIN AK
 enum eDvbCode {
+#ifndef OSDPAINTER
   code_iso8859_1,
   code_iso8859_2,
   code_iso8859_5,
   code_iso8859_7,
   code_iso8859_13,
+#endif
   code_iso8859_15,
 #define eDvbCodeSize (code_iso8859_15 + 1)
   };
+//M7X0 END AK
 
 class cFont {
 public:
   enum { NUMCHARS = 256 };
-  typedef unsigned long tPixelData;
+  typedef uint32_t tPixelData;
   struct tCharData {
     tPixelData width, height;
     tPixelData lines[1];

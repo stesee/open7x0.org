@@ -8,9 +8,9 @@
 .\" License as specified in the file COPYING that comes with the
 .\" vdr distribution.
 .\"
-.\" $Id: vdr.5 1.59 2006/04/30 08:55:16 kls Exp $
+.\" $Id: vdr.5 1.61 2007/01/07 14:04:12 kls Exp $
 .\"
-.TH vdr 5 "30 Apr 2006" "1.4.0" "Video Disk Recorder Files"
+.TH vdr 5 "07 Jan 2007" "1.4.5" "Video Disk Recorder Files"
 .SH NAME
 vdr file formats - the Video Disk Recorder Files
 .SH DESCRIPTION
@@ -57,7 +57,7 @@ to right):
 .B Name
 The channel's name (if the name originally contains a ':' character
 it has to be replaced by '|').
-Some tv stations provide a way of deriving a "short name" from the
+Some TV stations provide a way of deriving a "short name" from the
 channel name, which can be used in situations where there is not
 much space for displaying a long name. If a short name is available
 for this channel, it follows the full name and is delimited by a comma,
@@ -248,7 +248,7 @@ cause the timer to record on that day. Example:
 
 .B MTWTF\-\-
 
-will define a timer that records on Monday thru Friday and does not record
+will define a timer that records on Monday through Friday and does not record
 on weekends. The same result could be achieved with \fBABCDE\-\-\fR (this is
 used to allow setting the days with language specific characters).
 Note that only letters may be used here, no digits.
@@ -259,7 +259,7 @@ so a complete definition could look like this:
 
 \fBMTWTF\-\-@2002\-02\-18\fR
 
-which would implement a timer that records Monday thru Friday, and will hit
+which would implement a timer that records Monday through Friday, and will hit
 for the first time on or after February 18, 2002.
 This \fBfirst day\fR feature can be used to disable a repeating timer for a couple
 of days, or for instance to define a new Mon...Fri timer on Wednesday, which

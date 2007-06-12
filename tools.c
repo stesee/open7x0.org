@@ -4,7 +4,7 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: tools.c 1.118 2006/05/26 10:10:31 kls Exp $
+ * $Id$
  */
 
 #include "tools.h"
@@ -26,6 +26,7 @@ extern "C" {
 #include <stdlib.h>
 #include <sys/time.h>
 #include <sys/vfs.h>
+#include <sys/param.h>
 #include <time.h>
 #include <unistd.h>
 #include <utime.h>
@@ -35,7 +36,8 @@ extern "C" {
 int SysLogLevel = 3;
 
 #define MAXSYSLOGBUF 256
-
+//M7X0 BEGIN AK
+#ifndef OSDPAINTER
 void syslog_with_tid(int priority, const char *format, ...)
 {
   va_list ap;
@@ -45,7 +47,8 @@ void syslog_with_tid(int priority, const char *format, ...)
   vsyslog(priority, fmt, ap);
   va_end(ap);
 }
-
+#endif
+//M7X0 END AK
 int BCD2INT(int x)
 {
   return ((1000000 * BCDCHARTOINT((x >> 24) & 0xFF)) +
@@ -58,24 +61,26 @@ ssize_t safe_read(int filedes, void *buffer, size_t size)
 {
   for (;;) {
       ssize_t p = read(filedes, buffer, size);
-      if (p < 0 && errno == EINTR) {
-         dsyslog("EINTR while reading from file handle %d - retrying", filedes);
+      if (p < 0 && (errno == EINTR || errno == EBUSY)) {
+         dsyslog("EINTR/EBUSY while reading from file handle %d - retrying", filedes);
          continue;
          }
       return p;
       }
 }
-
+//M7X0 BEGIN AK
+//lets test using poll
 ssize_t safe_write(int filedes, const void *buffer, size_t size)
 {
   ssize_t p = 0;
   ssize_t written = size;
   const unsigned char *ptr = (const unsigned char *)buffer;
+
   while (size > 0) {
         p = write(filedes, ptr, size);
         if (p < 0) {
-           if (errno == EINTR) {
-              dsyslog("EINTR while writing to file handle %d - retrying", filedes);
+           if (errno == EINTR || errno == EBUSY) {
+              dsyslog("EINTR/EBUSY while writing to file handle %d - retrying", filedes);
               continue;
               }
            break;
@@ -426,13 +431,15 @@ bool RemoveEmptyDirectories(const char *DirName, bool RemoveThis)
                  }
               else {
                  LOG_ERROR_STR(buffer);
-                 free(buffer);
-                 return false;
+                 empty = false;
                  }
               free(buffer);
               }
            }
      if (RemoveThis && empty) {
+//M7X0 BEGIN AK
+        d.Close(); // some filesystems seems to need this
+//M7X0 END AK
         dsyslog("removing %s", DirName);
         if (remove(DirName) < 0) {
            LOG_ERROR_STR(DirName);
@@ -484,22 +491,22 @@ int DirSizeMB(const char *DirName)
 
 char *ReadLink(const char *FileName)
 {
-  char RealName[PATH_MAX];
-  const char *TargetName = NULL;
-  int n = readlink(FileName, RealName, sizeof(RealName) - 1);
-  if (n < 0) {
-     if (errno == ENOENT || errno == EINVAL) // file doesn't exist or is not a symlink
-        TargetName = FileName;
+  if (!FileName)
+     return NULL;
+//M7X0 BEGIN AK
+
+  char *TargetName =  MALLOC(char,MAXPATHLEN + 1);
+  if (!TargetName || !realpath(FileName,TargetName)) { // canonicalize_file_name(FileName); uclibc don't know it
+     char *oldTargetName = TargetName;
+     TargetName =  NULL;
+     if (errno == ENOENT) // file doesn't exist
+        TargetName = strdup(FileName);
      else // some other error occurred
         LOG_ERROR_STR(FileName);
+     free(oldTargetName);
      }
-  else if (n < int(sizeof(RealName))) { // got it!
-     RealName[n] = 0;
-     TargetName = RealName;
-     }
-  else
-     esyslog("ERROR: symlink's target name too long: %s", FileName);
-  return TargetName ? strdup(TargetName) : NULL;
+//M7X0 BEGIN END
+  return TargetName;
 }
 
 bool SpinUpDisk(const char *FileName)
@@ -558,11 +565,11 @@ cTimeMs::cTimeMs(void)
   Set();
 }
 
-uint64 cTimeMs::Now(void)
+uint64_t cTimeMs::Now(void)
 {
   struct timeval t;
   if (gettimeofday(&t, NULL) == 0)
-     return (uint64(t.tv_sec)) * 1000 + t.tv_usec / 1000;
+     return (uint64_t(t.tv_sec)) * 1000 + t.tv_usec / 1000;
   return 0;
 }
 
@@ -576,7 +583,7 @@ bool cTimeMs::TimedOut(void)
   return Now() >= begin;
 }
 
-uint64 cTimeMs::Elapsed(void)
+uint64_t cTimeMs::Elapsed(void)
 {
   return Now() - begin;
 }
@@ -615,7 +622,8 @@ cString cString::sprintf(const char *fmt, ...)
   vasprintf(&buffer, fmt, ap);
   return cString(buffer, true);
 }
-
+//M7X0 BEGIN AK
+#ifndef OSDPAINTER
 cString WeekDayName(int WeekDay)
 {
   char buffer[4];
@@ -675,7 +683,8 @@ cString TimeString(time_t t)
   strftime(buf, sizeof(buf), "%R", localtime_r(&t, &tm_r));
   return buf;
 }
-
+#endif
+//M7X0 END AK
 // --- RgbToJpeg -------------------------------------------------------------
 //M7X0 BEGIN AK
 #ifdef WITH_LIBJPEG
@@ -900,11 +909,19 @@ cReadDir::~cReadDir()
   if (directory)
      closedir(directory);
 }
-
+//M7X0 BEGIN AK
+void cReadDir::Close(void)
+{
+  if (directory)
+     closedir(directory);
+  directory = NULL;
+}
+//M7X0 END AK
 struct dirent *cReadDir::Next(void)
 {
   return directory && readdir_r(directory, &u.d, &result) == 0 ? result : NULL;
 }
+
 
 // --- cFile -----------------------------------------------------------------
 
@@ -1072,9 +1089,6 @@ bool cSafeFile::Close(void)
 // We have no kernel support for fadvise so disable this won't work anyway
 //#define USE_FADVISE
 #undef USE_FADVISE
-//M7X0 END AK
-
-#define WRITE_BUFFER KILOBYTE(800)
 
 cUnbufferedFile::cUnbufferedFile(void)
 {
@@ -1086,10 +1100,33 @@ cUnbufferedFile::~cUnbufferedFile()
   Close();
 }
 
+
 int cUnbufferedFile::Open(const char *FileName, int Flags, mode_t Mode)
 {
   Close();
+#ifdef USE_DIRECT_IO
+  directIOused = Flags & O_DIRECT;
+  if (directIOused) {
+     Flags &= ~O_NONBLOCK;
+     fd = open(FileName, Flags, Mode);
+
+     // Accordung to open man page, for direct io all user-buffers need to be
+     // aligned to logical block size and read/write sizes have to multiplier
+     // of blocksize. For offsets the alignment is need as well.
+     if (fd >= 0) {
+        struct stat fileStat;
+        if (fstat(fd, &fileStat) < 0) {
+           LOG_ERROR;
+           fileStat.st_blksize = KILOBYTE(64);
+           }
+        blockSize = fileStat.st_blksize;
+        }
+     }
+  else
+     fd = open(FileName, Flags, Mode);
+#else
   fd = open(FileName, Flags, Mode);
+#endif
   curpos = 0;
 #ifdef USE_FADVISE
   begin = lastpos = ahead = 0;
@@ -1113,6 +1150,7 @@ int cUnbufferedFile::Close(void)
      posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
      }
 #endif
+
   int OldFd = fd;
   fd = -1;
   return close(OldFd);
@@ -1136,11 +1174,58 @@ int cUnbufferedFile::FadviseDrop(off_t Offset, off_t Len)
   // rounding up the window to make sure that not PAGE_SIZE-aligned data gets freed.
   return posix_fadvise(fd, Offset - (FADVGRAN - 1), Len + (FADVGRAN - 1) * 2, POSIX_FADV_DONTNEED);
 }
+#ifdef USE_DIRECT_IO
+int cUnbufferedFile::FallBackFromDirectIO(void)
+{
+  directIOused = false;
+  int flags = fcntl(fd, F_GETFL);
+  if (flags < 0)
+     return flags;
 
+  flags = flags & ~O_DIRECT;
+  return fcntl(fd, F_SETFL, flags);
+}
+#endif
 off_t cUnbufferedFile::Seek(off_t Offset, int Whence)
 {
   if (Whence == SEEK_SET && Offset == curpos)
      return curpos;
+#ifdef USE_DIRECT_IO
+  if (directIOused) {
+     if (fd < 0) {
+        errno = EINVAL;
+        return -1;
+        }
+#ifdef CHECK_DIRECT_IO_BUFFERS
+     if (Offset & (blockSize -1)) {
+        esyslog("ERROR: Seek offset 0x%X not aligned to fs block size 0x%X "
+                "while using direct io. Falling back ... !",Offset, blockSize);
+
+        int r = FallBackFromDirectIO();
+        if (r < 0)
+           return r;
+
+        curpos = lseek(fd, Offset, Whence);
+        return curpos;
+        }
+#endif
+     curpos = lseek(fd, Offset, Whence);
+
+     if (curpos < 0) {
+        esyslog("ERROR: Cannot seek to offset 0x%X fs block size 0x%X "
+                "while using direct io. Falling back ... !",Offset, blockSize);
+
+        int r = FallBackFromDirectIO();
+        if (r < 0)
+           return r;
+
+        curpos = lseek(fd, Offset, Whence);
+        }
+
+     return curpos;
+     }
+#endif
+
   curpos = lseek(fd, Offset, Whence);
   return curpos;
 }
@@ -1158,10 +1243,42 @@ ssize_t cUnbufferedFile::Read(void *Data, size_t Size)
         }
      cachedstart = min(cachedstart, curpos);
 #endif
+#ifdef USE_DIRECT_IO
+     ssize_t bytesRead = 0;
+     if (directIOused) {
+#ifdef CHECK_DIRECT_IO_BUFFERS
+        if ((((int)Data) & (blockSize - 1)) || (Size & (blockSize - 1))) {
+           esyslog("ERROR: Read Data %p or Size 0x%X not aligned to fs "
+               "block size 0x%X while using direct io. Falling back ... !",
+                                                    Data, Size, blockSize);
+
+           int r = FallBackFromDirectIO();
+           if (r < 0)
+              return r;
+           }
+#endif
+        bytesRead = safe_read(fd, Data, Size);
+
+        if (bytesRead < 0 && FATALERRNO) {
+           dsyslog ("READ: Direct IO seems to be not supported falling back!");
+
+           int r = FallBackFromDirectIO();
+           if (r < 0)
+              return r;
+
+           bytesRead = safe_read(fd, Data, Size);
+           }
+        }
+     else
+        bytesRead = safe_read(fd, Data, Size);
+#else
      ssize_t bytesRead = safe_read(fd, Data, Size);
+#endif
+     if (bytesRead > 0)
+        curpos += bytesRead;
 #ifdef USE_FADVISE
      if (bytesRead > 0) {
-        curpos += bytesRead;
+        //curpos += bytesRead;
         cachedend = max(cachedend, curpos);
 
         // Read ahead:
@@ -1205,7 +1322,38 @@ ssize_t cUnbufferedFile::Read(void *Data, size_t Size)
 ssize_t cUnbufferedFile::Write(const void *Data, size_t Size)
 {
   if (fd >=0) {
+#ifdef USE_DIRECT_IO
+     ssize_t bytesWritten = 0;
+     if (directIOused) {
+
+#ifdef CHECK_DIRECT_IO_BUFFERS
+        if ((((int)Data) & (blockSize - 1)) || (Size & (blockSize - 1))) {
+           esyslog("ERROR: Write Data 0x%p or Size 0x%X not aligned to fs "
+               "block size 0x%X while using direct io. Falling back ... !",
+                                                    Data, Size, blockSize);
+
+           int r = FallBackFromDirectIO();
+           if (r < 0)
+              return r;
+           }
+#endif
+        bytesWritten = safe_write(fd, Data, Size);
+
+        if (bytesWritten < 0 && FATALERRNO) {
+           dsyslog ("WRITE: Direct IO seems to be not supported falling back!");
+
+           int r = FallBackFromDirectIO();
+           if (r < 0)
+              return r;
+
+           bytesWritten = safe_write(fd, Data, Size);
+           }
+        }
+     else
+        bytesWritten = safe_write(fd, Data, Size);
+#else
      ssize_t bytesWritten = safe_write(fd, Data, Size);
+#endif
 #ifdef USE_FADVISE
      if (bytesWritten > 0) {
         begin = min(begin, curpos);
@@ -1247,12 +1395,23 @@ ssize_t cUnbufferedFile::Write(const void *Data, size_t Size)
               }
            }
         }
+#else
+     if (bytesWritten > 0)
+        curpos += bytesWritten;
 #endif
      return bytesWritten;
      }
   return -1;
 }
 
+int cUnbufferedFile::Truncate(off_t Length)
+{
+#ifdef USE_DIRECT_IO
+  if (directIOused)
+     FallBackFromDirectIO();
+#endif
+  return ftruncate(fd, Length);
+}
 cUnbufferedFile *cUnbufferedFile::Create(const char *FileName, int Flags, mode_t Mode)
 {
   cUnbufferedFile *File = new cUnbufferedFile;
@@ -1262,6 +1421,8 @@ cUnbufferedFile *cUnbufferedFile::Create(const char *FileName, int Flags, mode_t
      }
   return File;
 }
+
+//M7X0 END AK
 
 // --- cLockFile -------------------------------------------------------------
 

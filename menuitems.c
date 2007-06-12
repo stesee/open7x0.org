@@ -4,7 +4,7 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: menuitems.c 1.45 2006/06/03 13:20:01 kls Exp $
+ * $Id$
  */
 
 #include "menuitems.h"
@@ -75,6 +75,7 @@ eOSState cMenuEditIntItem::ProcessKey(eKeys Key)
 
   if (state == osUnknown) {
      int newValue = *value;
+     bool IsRepeat = Key & k_Repeat;
      Key = NORMALKEY(Key);
      switch (Key) {
        case kNone: break;
@@ -88,10 +89,14 @@ eOSState cMenuEditIntItem::ProcessKey(eKeys Key)
        case kLeft: // TODO might want to increase the delta if repeated quickly?
             newValue = *value - 1;
             fresh = true;
+            if (!IsRepeat && newValue < min && max != INT_MAX)
+               newValue = max;
             break;
        case kRight:
             newValue = *value + 1;
             fresh = true;
+            if (!IsRepeat && newValue > max && min != INT_MIN)
+               newValue = min;
             break;
        default:
             if (*value < min) { *value = min; Set(); }
@@ -308,7 +313,7 @@ void cMenuEditStrItem::Set(void)
         SetValue(buf);
         return;
         }
-     width -= font->Width('>'); // assuming '<' and '>' have the same with
+     width -= font->Width('>'); // assuming '<' and '>' have the same width
      int w = 0;
      int i = 0;
      int l = strlen(buf);
@@ -390,6 +395,8 @@ eOSState cMenuEditStrItem::ProcessKey(eKeys Key)
                     if (strlen(value) > 1) {
                        if (!insert || pos < int(strlen(value)) - 1)
                           memmove(value + pos, value + pos + 1, strlen(value) - pos);
+                       else if (insert && pos == int(strlen(value)) - 1)
+                          value[pos] = ' '; // in insert mode, deleting the last character replaces it with a blank to keep the cursor position
                        // reduce position, if we removed the last character
                        if (pos == int(strlen(value)))
                           pos--;
@@ -454,13 +461,6 @@ eOSState cMenuEditStrItem::ProcessKey(eKeys Key)
                           AdvancePos();
                        currentChar = NULL;
                        }
-                    if (insert && newchar) {
-                       // create a new character in insert mode
-                       if (int(strlen(value)) < length - 1) {
-                          memmove(value + pos + 1, value + pos, strlen(value) - pos + 1);
-                          value[pos] = ' ';
-                          }
-                       }
                     if (!currentChar || !*currentChar || *currentChar == '\t') {
                        // find the beginning of the character map entry for Key
                        int n = NORMALKEY(Key) - k0;
@@ -469,15 +469,28 @@ eOSState cMenuEditStrItem::ProcessKey(eKeys Key)
                              if (*currentChar++ == '\t')
                                 n--;
                              }
+                       // find first allowed character
+                       while (*currentChar && *currentChar != '\t' && !strchr(allowed, *currentChar))
+                             currentChar++;
                        }
                     if (*currentChar && *currentChar != '\t') {
+                       if (insert && newchar) {
+                          // create a new character in insert mode
+                          if (int(strlen(value)) < length - 1) {
+                             memmove(value + pos + 1, value + pos, strlen(value) - pos + 1);
+                             value[pos] = ' ';
+                             }
+                          }
                        value[pos] = *currentChar;
                        if (uppercase)
                           value[pos] = toupper(value[pos]);
-                       currentChar++;
+                       // find next allowed character
+                       do {
+                          currentChar++;
+                          } while (*currentChar && *currentChar != '\t' && !strchr(allowed, *currentChar));
+                       newchar = false;
+                       autoAdvanceTimeout.Set(AUTO_ADVANCE_TIMEOUT);
                        }
-                    newchar = false;
-                    autoAdvanceTimeout.Set(AUTO_ADVANCE_TIMEOUT);
                     }
                  else
                     return cMenuEditItem::ProcessKey(Key);

@@ -50,7 +50,9 @@ typedef enum
 typedef enum
 {
 	DMX_IN_FRONTEND, /* Input from a front-end device.  */
-	DMX_IN_DVR       /* Input from the logical DVR device.  */
+	DMX_IN_DVR,       /* Input from the logical DVR device.  */
+	DMX_IN_FRONTEND0 = 2,
+	DMX_IN_FRONTEND1 = 3
 } dmx_input_t;
 
 

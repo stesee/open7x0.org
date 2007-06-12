@@ -4,7 +4,7 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: thread.c 1.55 2006/06/02 13:51:39 kls Exp $
+ * $Id$
  */
 
 #include "thread.h"
@@ -15,6 +15,9 @@
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include <sys/time.h>
+//M7X0 BEGIN AK
+#include <time.h>
+//M7X0 END AK
 #include <sys/wait.h>
 #include <unistd.h>
 #include "tools.h"
@@ -42,6 +45,7 @@ cCondWait::cCondWait(void)
   signaled = false;
   pthread_mutex_init(&mutex, NULL);
   pthread_cond_init(&cond, NULL);
+
 }
 
 cCondWait::~cCondWait()
@@ -53,8 +57,33 @@ cCondWait::~cCondWait()
 
 void cCondWait::SleepMs(int TimeoutMs)
 {
+//M7X0 BEGIN AK
+  // Seems to be better this way for m7x0. the phread locking is based on a
+  // kernel-level-emulation for atomic-operations, which naturally takes much time.
+  // So locking via pthread should be avoided where possible on m7x0.
+  TimeoutMs = max(TimeoutMs, 3);
+  struct timespec waittime,waitrem;
+  waittime.tv_sec = TimeoutMs / 1000;
+  waittime.tv_nsec = (TimeoutMs % 1000) * 1000000;
+  waitrem.tv_sec = 0;
+  waitrem.tv_nsec = 0;
+
+  do {
+     nanosleep(&waittime,&waitrem);
+
+     if (waitrem.tv_sec <= 0 && waitrem.tv_nsec < 3000000)
+        break;
+
+     waittime.tv_sec = waitrem.tv_sec;
+     waittime.tv_nsec = waitrem.tv_nsec;
+     waitrem.tv_sec = 0;
+     waitrem.tv_nsec = 0;
+     } while (true);
+#if 0
   cCondWait w;
   w.Wait(max(TimeoutMs, 3)); // making sure the time is >2ms to avoid a possible busy wait
+#endif
+//M7X0 END AK
 }
 
 bool cCondWait::Wait(int TimeoutMs)
@@ -85,6 +114,7 @@ void cCondWait::Signal(void)
   signaled = true;
   pthread_cond_broadcast(&cond);
   pthread_mutex_unlock(&mutex);
+
 }
 
 // --- cCondVar --------------------------------------------------------------
@@ -293,7 +323,7 @@ bool cThread::Active(void)
 void cThread::Cancel(int WaitSeconds)
 {
   running = false;
-  if (active) {
+  if (active && WaitSeconds > -1) {
      if (WaitSeconds > 0) {
         for (time_t t0 = time(NULL) + WaitSeconds; time(NULL) < t0; ) {
             if (!Active())
@@ -316,11 +346,9 @@ bool cThread::EmergencyExit(bool Request)
   return emergencyExitRequested = true; // yes, it's an assignment, not a comparison!
 }
 
-_syscall0(pid_t, gettid)
-
 tThreadId cThread::ThreadId(void)
 {
-  return gettid();
+  return syscall(__NR_gettid);
 }
 
 void cThread::SetMainThreadId(void)
@@ -423,7 +451,6 @@ bool cPipe::Open(const char *Command, const char *Mode)
         iopipe = 1;
         }
      close(fd[iopipe]);
-     f = fdopen(fd[1 - iopipe], mode);
      if ((f = fdopen(fd[1 - iopipe], mode)) == NULL) {
         LOG_ERROR;
         close(fd[1 - iopipe]);

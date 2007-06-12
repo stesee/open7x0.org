@@ -4,7 +4,7 @@
  * See the main source file 'vdr.c' for copyright information and
  * how to reach the author.
  *
- * $Id: menu.c 1.441 2006/06/03 13:32:42 kls Exp $
+ * $Id$
  */
 
 #include "menu.h"
@@ -39,7 +39,7 @@
 #define MAXRECORDCONTROLS (MAXDEVICES * MAXRECEIVERS)
 #define MAXINSTANTRECTIME (24 * 60 - 1) // 23:59 hours
 #define MAXWAITFORCAMMENU 4 // seconds to wait for the CAM menu to open
-#define MINFREEDISK       300 // minimum free disk space required to start recording
+#define MINFREEDISK       300 // minimum free disk space (in MB) required to start recording
 #define NODISKSPACEDELTA  300 // seconds between "Not enough disk space to start recording!" messages
 
 #define CHNUMWIDTH  (numdigits(Channels.MaxNumber()) + 1)
@@ -2323,6 +2323,7 @@ private:
   int numAudioLanguages;
   void Setup(void);
   const char *videoDisplayFormatTexts[3];
+  const char *videoFormatTexts[3];
   const char *updateChannelsTexts[6];
 public:
   cMenuSetupDVB(void);
@@ -2336,7 +2337,15 @@ cMenuSetupDVB::cMenuSetupDVB(void)
   originalNumAudioLanguages = numAudioLanguages;
   videoDisplayFormatTexts[0] = tr("pan&scan");
   videoDisplayFormatTexts[1] = tr("letterbox");
-  videoDisplayFormatTexts[2] = tr("center cut out");
+//M7X0 BEGIN GA
+  //no driver support on m7x0
+  //videoDisplayFormatTexts[2] = tr("center cut out");
+
+  //m7x0 auto aspect
+  videoFormatTexts[0] = tr("4:3");
+  videoFormatTexts[1] = tr("16:9");
+  videoFormatTexts[2] = tr("auto");
+
   updateChannelsTexts[0] = tr("no");
   updateChannelsTexts[1] = tr("names only");
   updateChannelsTexts[2] = tr("PIDs only");
@@ -2355,9 +2364,19 @@ void cMenuSetupDVB::Setup(void)
   Clear();
 
   Add(new cMenuEditIntItem( tr("Setup.DVB$Primary DVB interface"), &data.PrimaryDVB, 1, cDevice::NumDevices()));
-  Add(new cMenuEditBoolItem(tr("Setup.DVB$Video format"),          &data.VideoFormat, "4:3", "16:9"));
-  if (data.VideoFormat == 0)
-     Add(new cMenuEditStraItem(tr("Setup.DVB$Video display format"), &data.VideoDisplayFormat, 3, videoDisplayFormatTexts));
+  //m7x0 TvMode fbas svideo
+  Add(new cMenuEditBoolItem(tr("Setup.DVB$TV mode"),		   &data.TvMode, "fbas", "svideo"));
+  //m7x0 auto aspect
+  Add(new cMenuEditStraItem(tr("Setup.DVB$Video format"),          &data.VideoFormat, 3, videoFormatTexts));
+//M7X0 BEGIN GA
+  /*
+   * we don't want to force 16/9 in letterbox as in orig code
+   * try it this way
+   * if (data.VideoFormat == 0)
+   */
+
+  Add(new cMenuEditStraItem(tr("Setup.DVB$Video display format"), &data.VideoDisplayFormat, 3, videoDisplayFormatTexts));
+//M7X0 END GA
   Add(new cMenuEditBoolItem(tr("Setup.DVB$Use Dolby Digital"),     &data.UseDolbyDigital));
   Add(new cMenuEditStraItem(tr("Setup.DVB$Update channels"),       &data.UpdateChannels, 6, updateChannelsTexts));
   Add(new cMenuEditIntItem( tr("Setup.DVB$Audio languages"),       &numAudioLanguages, 0, I18nNumLanguages));
@@ -2372,8 +2391,9 @@ eOSState cMenuSetupDVB::ProcessKey(eKeys Key)
 {
   int oldPrimaryDVB = ::Setup.PrimaryDVB;
   int oldVideoDisplayFormat = ::Setup.VideoDisplayFormat;
-  bool oldVideoFormat = ::Setup.VideoFormat;
-  bool newVideoFormat = data.VideoFormat;
+  int oldVideoFormat = ::Setup.VideoFormat;
+  int newVideoFormat = data.VideoFormat;
+  bool oldTvMode = ::Setup.TvMode;
   int oldnumAudioLanguages = numAudioLanguages;
   eOSState state = cMenuSetupBase::ProcessKey(Key);
 
@@ -2406,7 +2426,9 @@ eOSState cMenuSetupDVB::ProcessKey(eKeys Key)
      if (::Setup.VideoDisplayFormat != oldVideoDisplayFormat)
         cDevice::PrimaryDevice()->SetVideoDisplayFormat(eVideoDisplayFormat(::Setup.VideoDisplayFormat));
      if (::Setup.VideoFormat != oldVideoFormat)
-        cDevice::PrimaryDevice()->SetVideoFormat(::Setup.VideoFormat);
+        cDevice::PrimaryDevice()->SetVideoFormat(eVideoFormat(::Setup.VideoFormat));
+     if (::Setup.TvMode != oldTvMode)
+        cDevice::PrimaryDevice()->SetTvMode(::Setup.TvMode);
      }
   return state;
 }
@@ -3018,9 +3040,9 @@ static void SetTrackDescriptions(int LiveChannel)
            }
         }
      }
-  else if (cReplayControl::LastReplayed()) {
+  else if (cReplayControl::NowReplaying()) {
      cThreadLock RecordingsLock(&Recordings);
-     cRecording *Recording = Recordings.GetByName(cReplayControl::LastReplayed());
+     cRecording *Recording = Recordings.GetByName(cReplayControl::NowReplaying());
      if (Recording)
         Components = Recording->Info()->Components();
      }
@@ -3146,6 +3168,7 @@ eOSState cDisplayChannel::ProcessKey(eKeys Key)
             return osEnd;
             }
     case k1 ... k9:
+         group = -1;
          if (number >= 0) {
             if (number > Channels.MaxNumber())
                number = Key - k0;
@@ -3279,7 +3302,7 @@ eOSState cDisplayChannel::ProcessKey(eKeys Key)
             return osEnd;
             }
     };
-  if (!timeout || lastTime.Elapsed() < (uint64)(Setup.ChannelInfoTime * 1000)) {
+  if (!timeout || lastTime.Elapsed() < (uint64_t)(Setup.ChannelInfoTime * 1000)) {
      if (Key == kNone && !number && group < 0 && !NewChannel && channel && channel->Number() != cDevice::CurrentChannel()) {
         // makes sure a channel switch through the SVDRP CHAN command is displayed
         channel = Channels.GetByNumber(cDevice::CurrentChannel());
@@ -3342,17 +3365,17 @@ void cDisplayVolume::Process(eKeys Key)
 eOSState cDisplayVolume::ProcessKey(eKeys Key)
 {
   switch (Key) {
-//M7X0 BEGIN AK	 
+//M7X0 BEGIN AK
 // Support Volume Change via Left/Right added
 //M7X0TODO: Make this working in replaying mode as well
-    case kLeft|k_Repeat:
-    case kLeft:
-    case kRight|k_Repeat:
-    case kRight:
-	 cDevice::PrimaryDevice()->SetVolume(NORMALKEY(Key) == kLeft ? -VOLUMEDELTA : VOLUMEDELTA);
-	 Show();
-	 timeout.Set(VOLUMETIMEOUT);
-	 break;
+		case kLeft|k_Repeat:
+		case kLeft:
+		case kRight|k_Repeat:
+		case kRight:
+			cDevice::PrimaryDevice()->SetVolume(NORMALKEY(Key) == kLeft ? -VOLUMEDELTA : VOLUMEDELTA);
+			Show();
+			timeout.Set(VOLUMETIMEOUT);
+			break;
 //M7X0 END AK
     case kVolUp|k_Repeat:
     case kVolUp:
@@ -3817,17 +3840,19 @@ bool cRecordControls::StateChanged(int &State)
 
 // --- cReplayControl --------------------------------------------------------
 
+cReplayControl *cReplayControl::currentReplayControl = NULL;
 char *cReplayControl::fileName = NULL;
 char *cReplayControl::title = NULL;
 
 cReplayControl::cReplayControl(void)
 :cDvbPlayerControl(fileName)
 {
+  currentReplayControl = this;
   displayReplay = NULL;
   visible = modeOnly = shown = displayFrames = false;
   lastCurrent = lastTotal = -1;
   lastPlay = lastForward = false;
-  lastSpeed = -1;
+  lastSpeed = -2; // an invalid value
   timeoutShow = 0;
   timeSearchActive = false;
   marks.Load(fileName);
@@ -3841,6 +3866,8 @@ cReplayControl::~cReplayControl()
   Hide();
   cStatus::MsgReplaying(this, NULL, fileName, false);
   Stop();
+  if (currentReplayControl == this)
+     currentReplayControl = NULL;
 }
 
 void cReplayControl::SetRecording(const char *FileName, const char *Title)
@@ -3849,6 +3876,11 @@ void cReplayControl::SetRecording(const char *FileName, const char *Title)
   free(title);
   fileName = FileName ? strdup(FileName) : NULL;
   title = Title ? strdup(Title) : NULL;
+}
+
+const char *cReplayControl::NowReplaying(void)
+{
+  return currentReplayControl ? fileName : NULL;
 }
 
 const char *cReplayControl::LastReplayed(void)
@@ -3887,7 +3919,7 @@ void cReplayControl::Hide(void)
      needsFastResponse = visible = false;
      modeOnly = false;
      lastPlay = lastForward = false;
-     lastSpeed = -1;
+     lastSpeed = -2; // an invalid value
      timeSearchActive = false;
      }
 }

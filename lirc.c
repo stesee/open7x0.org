@@ -6,7 +6,7 @@
  *
  * LIRC support added by Carsten Koch <Carsten.Koch@icem.de>  2000-06-16.
  *
- * $Id: lirc.c 1.15 2006/05/28 08:48:13 kls Exp $
+ * $Id$
  */
 
 #include "lirc.h"
@@ -73,13 +73,39 @@ void cLircRemote::Action(void)
 //M7X0 BEGIN AK
 // This should fix broken shutdown
   int timeout = DEFAULTTIMEOUT;
+  int i,ret=0;
+  char *end=NULL;
 //M7X0 END AK
 
   while (Running() && f >= 0) {
-
+        int endcount = end ? end - buf + 1 : ret;
+        if (endcount < ret) {
+           memcpy (buf,buf + endcount, ret - endcount);
+           ret -= endcount;
+           end = NULL;
+           }
+        else if (ret < 0 || endcount == ret || ret >= LIRC_BUFFER_SIZE) {
+           ret = 0;
+           end = NULL;
+           }
         bool ready = cFile::FileReady(f, timeout);
-        int ret = ready ? safe_read(f, buf, sizeof(buf)) : -1;
-
+//M7X0 BEGIN AK
+        if (ready) {
+           //ret = 0;
+           do {
+              i = safe_read(f, buf + ret, LIRC_BUFFER_SIZE - ret);
+              if (i < 0) {
+                 ret = i;
+                 break;
+                 }
+              ret += i;
+              } while ((!ret || !(end = (char *)memchr(buf,'\n',ret))) && ret < LIRC_BUFFER_SIZE);
+           buf[ret<0 ? 0 : (ret<LIRC_BUFFER_SIZE?ret:LIRC_BUFFER_SIZE-1)]=0;
+          // dsyslog("LIRC Buffer '%s' read with %d Bytes",buf,ret);
+           }
+        //else
+        //   ret = -1;
+//M7X0 END AK
         if (ready && ret <= 0 ) {
            esyslog("ERROR: lircd connection broken, trying to reconnect every %.1f seconds", float(RECONNECTDELAY) / 1000);
            close(f);
@@ -92,8 +118,9 @@ void cLircRemote::Action(void)
                     }
                  }
            }
-
-        if (ready && ret > 21) {
+//M7X0 BEGIN AK (especially for Lemmi ;))
+        if (ready && ret > 6) {
+//M7X0 END AK
            int count;
            char KeyName[LIRC_KEY_BUF];
            if (sscanf(buf, "%*x %x %29s", &count, KeyName) != 2) { // '29' in '%29s' is LIRC_KEY_BUF-1!
