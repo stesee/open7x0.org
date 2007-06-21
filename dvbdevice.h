@@ -59,6 +59,7 @@ public:
   virtual void CheckStreamAspect();
   virtual void SetTvSettings(bool);
   virtual void SetTvMode(bool);
+  virtual void SetVCRMode(bool);
   
 // SPU facilities
 

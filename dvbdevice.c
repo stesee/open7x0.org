@@ -58,7 +58,10 @@
 // For 16:9/4:3 switching
 #define AVSWCMD_TV_FBAS    0x80
 #define AVSWCMD_TV_SVIDEO  0x81
-#define AVSWCMD_TV_OFF	   0x88
+#define AVSWCMD_TV_VCR     0x82
+#define AVSWCMD_TV_OFF	   0x84
+#define AVSWCMD_VCR_FBAS   0x85
+#define AVSWCMD_VCR_SVIDEO 0x86
 #define AVSWCMD_MODE_16_9  0x89
 #define AVSWCMD_MODE_4_3   0x90
 //M7X0 BEGIN AK
@@ -3853,18 +3856,6 @@ void cDvbDevice::SetVideoDisplayFormat(eVideoDisplayFormat VideoDisplayFormat)
              CHECK(ioctl(fd_video_v4l, M7X0_SET_TV_ASPECT_MODE, M7X0_VIDEO_LETTER_BOX));
              dsyslog("DEBUG: set mode -> letterbox");
              break;
-        case vdfCenterCutOut:
-        //some test stuff
-        //CHECK(ioctl(fd_video, M7X0_SET_TV_ASPECT_MODE, VIDEO_CENTER_CUT_OUT));
-        //  struct video_window vid_win = {
-        //          50,50,640,480
-        //  };
-        //struct video_window *vid_win;
-        //if(ioctl(fd_video_set, VIDIOCSWIN, &vid_win) < 0){
-        //        perror("ioctl (VIDIOCSWIN)");
-        //      }
-             dsyslog("DEBUG set mode: cut out, not working yet");
-             break;
         }
       //}
    }
@@ -3883,11 +3874,12 @@ void cDvbDevice::SetVideoFormat(eVideoFormat VideoFormat)
  *
  * aspect auto format added
  */
-   if (HasDecoder()) {
-    int avs = open("/dev/avswitch", O_WRONLY);
-    if(avs== -1) 
+   if (getIaMode() && HasDecoder()) {
+
+     int avs = open("/dev/avswitch", O_WRONLY);
+     if(avs== -1)
         esyslog("m7x0 can not open /dev/avswitch");
-	
+
       switch(VideoFormat) {
 	    case vf16_9:
         	dsyslog("DEBUG: set 16/9");
@@ -3907,10 +3899,9 @@ void cDvbDevice::SetVideoFormat(eVideoFormat VideoFormat)
       close(avs);
       SetVideoDisplayFormat(eVideoDisplayFormat(Setup.VideoDisplayFormat));
    }
-   
-    int debugget;
-    CHECK(ioctl(fd_video_v4l, M7X0_GET_TV_ASPECT_RATIO, &debugget));
-    dsyslog("DEBUG: current display format (3=16_9) -> %i", debugget);
+    //int debugget;
+    //CHECK(ioctl(fd_video_v4l, M7X0_GET_TV_ASPECT_RATIO, &debugget));
+    //dsyslog("DEBUG: current display format (3=16_9) -> %i", debugget);
 
 //M7X0 END AK
 }
@@ -3936,19 +3927,45 @@ void cDvbDevice::CheckStreamAspect()
 
 void cDvbDevice::SetTvSettings(bool settv){
     dsyslog("DEBUG: set tv settings-> %d", settv);
+    if(settv){
+      SetTvMode(Setup.TvMode);
+      SetVideoFormat(eVideoFormat(Setup.VideoFormat));
+    }else{
+      int avs = open("/dev/avswitch", O_WRONLY);
+      if(avs== -1)
+        esyslog("m7x0 can not open /dev/avswitch");
+      CHECK(ioctl(avs, AVSWCMD_TV_OFF, 0));
+      CHECK(ioctl(avs, AVSWCMD_TV_VCR, 0));
+      close(avs);   
+    }
 }
 
 //m7x0 TvMode fbas svideo
 void cDvbDevice::SetTvMode(bool tvmode){
     dsyslog("DEBUG: set tv mode -> %d", tvmode);
     int avs = open("/dev/avswitch", O_WRONLY);
-    if(avs== -1) {
+    if(getIaMode()){
+    if(avs== -1) 
       esyslog("m7x0 can not open /dev/avswitch");
-    }
     if(tvmode){
 	CHECK(ioctl(avs, AVSWCMD_TV_SVIDEO, 0));
     }else{
 	CHECK(ioctl(avs, AVSWCMD_TV_FBAS, 0));
+    }
+    }
+    close(avs);
+}
+
+//m7x0 TvMode fbas svideo
+void cDvbDevice::SetVCRMode(bool vcrmode){
+    dsyslog("DEBUG: set vcr mode -> %d", vcrmode);
+    int avs = open("/dev/avswitch", O_WRONLY);
+    if(avs== -1) 
+      esyslog("m7x0 can not open /dev/avswitch");
+    if(vcrmode){
+	CHECK(ioctl(avs, AVSWCMD_VCR_SVIDEO, 0));
+    }else{
+	CHECK(ioctl(avs, AVSWCMD_VCR_FBAS, 0));
     }
     close(avs);
 }

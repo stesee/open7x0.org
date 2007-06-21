@@ -233,7 +233,9 @@ public:
   int UseVps;
   int VpsMargin;
   int RecordingDirs;
+  int HotStandby;
   int TvMode;
+  int VCRMode;
   int VideoDisplayFormat;
   int VideoFormat;
   int UpdateChannels;

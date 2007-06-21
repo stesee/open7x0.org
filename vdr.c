@@ -247,6 +247,7 @@ int main(int argc, char *argv[])
       { "epgfile",  required_argument, NULL, 'E' },
       { "grab",     required_argument, NULL, 'g' },
       { "help",     no_argument,       NULL, 'h' },
+      { "interactive",    no_argument, NULL, 'i' },
       { "lib",      required_argument, NULL, 'L' },
       { "lirc",     optional_argument, NULL, 'l' | 0x100 },
       { "log",      required_argument, NULL, 'l' },
@@ -267,7 +268,7 @@ int main(int argc, char *argv[])
     };
 
   int c;
-  while ((c = getopt_long(argc, argv, "a:c:dD:E:g:hl:L:mp:P:r:s:t:u:v:Vw:", long_options, NULL)) != -1) {
+  while ((c = getopt_long(argc, argv, "a:c:dD:E:g:hil:L:mp:P:r:s:t:u:v:Vw:", long_options, NULL)) != -1) {
         switch (c) {
           case 'a': AudioCommand = optarg;
                     break;
@@ -289,6 +290,8 @@ int main(int argc, char *argv[])
           case 'g': cSVDRP::SetGrabImageDir(*optarg != '-' ? optarg : NULL);
                     break;
           case 'h': DisplayHelp = true;
+                    break;
+          case 'i': setIaMode(0);
                     break;
           case 'l': {
                       char *p = strchr(optarg, '.');
@@ -419,7 +422,8 @@ int main(int argc, char *argv[])
                "                           existing directory, without any \"..\", double '/'\n"
                "                           or symlinks (default: none, same as -g-)\n"
                "  -h,       --help         print this help and exit\n"
-               "  -l LEVEL, --log=LEVEL    set log level (default: 3)\n"
+               "  -i,       --interactive  start without TV initialisation\n"
+	       "  -l LEVEL, --log=LEVEL    set log level (default: 3)\n"
                "                           0 = no logging, 1 = errors only,\n"
                "                           2 = errors and info, 3 = errors, info and debug\n"
                "                           if logging should be done to LOG_LOCALn instead of\n"
@@ -655,6 +659,9 @@ int main(int argc, char *argv[])
            }
         }
      }
+     
+     if(!getIaMode())
+        cDevice::PrimaryDevice()->SetTvSettings(0);
 
   // User interface:
 
@@ -926,6 +933,7 @@ int main(int argc, char *argv[])
            LastActivity = time(NULL);
            }
         // Keys that must work independent of any interactive mode:
+	if(getIaMode()){
         switch (key) {
           // Menu control:
           case kMenu: {
@@ -1083,6 +1091,11 @@ int main(int argc, char *argv[])
           case kPower: {
                isyslog("Power button pressed");
                DELETE_MENU;
+	       if(Setup.HotStandby){
+	         setIaMode(0);
+		 cDevice::PrimaryDevice()->SetTvSettings(0);
+		 break;
+		 }
                if (!Shutdown) {
                   Skins.Message(mtError, tr("Can't shutdown - option '-s' not given!"));
                   break;
@@ -1090,23 +1103,31 @@ int main(int argc, char *argv[])
                LastActivity = 1; // not 0, see below!
                UserShutdown = true;
                if (cRecordControls::Active()) {
+	          /*
                   if (!Interface->Confirm(tr("Recording - shut down anyway?")))
                      break;
+		     */
+	          setIaMode(0);
+		  cDevice::PrimaryDevice()->SetTvSettings(0);		     
                   }
-               if (cPluginManager::Active(tr("shut down anyway?")))
-                  break;
+               //if (cPluginManager::Active(tr("shut down anyway?")))
+                 // break;
                if (!cRecordControls::Active()) {
                   cTimer *timer = Timers.GetNextActiveTimer();
                   time_t Next  = timer ? timer->StartTime() : 0;
                   time_t Delta = timer ? Next - time(NULL) : 0;
                   if (Next && Delta <= Setup.MinEventTimeout * 60) {
-                     char *buf;
+                     /*
+		     char *buf;
                      asprintf(&buf, tr("Recording in %ld minutes, shut down anyway?"), Delta / 60);
                      bool confirm = Interface->Confirm(buf);
                      free(buf);
                      if (!confirm)
                         break;
-                     }
+                     */
+		     setIaMode(0);
+		     cDevice::PrimaryDevice()->SetTvSettings(0);
+		     }
                   }
                ForceShutdown = true;
                break;
@@ -1221,6 +1242,13 @@ int main(int argc, char *argv[])
              default:    break;
              }
            }
+	   }else{
+	   if(NORMALKEY(key) == kPower){
+	        dsyslog("DEBUG: wakeup from IaMode");
+		setIaMode(1);
+		cDevice::PrimaryDevice()->SetTvSettings(1);
+		}
+	   }
         if (!Menu) {
            if (!InhibitEpgScan)
               EITScanner.Process();
@@ -1235,7 +1263,7 @@ int main(int argc, char *argv[])
            time_t Now = time(NULL);
            if (Now - LastActivity > ACTIVITYTIMEOUT) {
               // Shutdown:
-              if (Shutdown && (Setup.MinUserInactivity || LastActivity == 1) && Now - LastActivity > Setup.MinUserInactivity * 60) {
+              if (!Setup.HotStandby && Shutdown && (Setup.MinUserInactivity || LastActivity == 1) && Now - LastActivity > Setup.MinUserInactivity * 60) {
                  cTimer *timer = Timers.GetNextActiveTimer();
                  time_t Next  = timer ? timer->StartTime() : 0;
                  time_t Delta = timer ? Next - Now : 0;

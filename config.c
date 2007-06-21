@@ -251,7 +251,9 @@ cSetup::cSetup(void)
   UseVps = 0;
   VpsMargin = 120;
   RecordingDirs = 1;
+  HotStandby = 0;
   TvMode = 0;
+  VCRMode = 0;
   VideoDisplayFormat = 1;
   VideoFormat = 0;
   UpdateChannels = 5;
@@ -413,7 +415,9 @@ bool cSetup::Parse(const char *Name, const char *Value)
   else if (!strcasecmp(Name, "UseVps"))              UseVps             = atoi(Value);
   else if (!strcasecmp(Name, "VpsMargin"))           VpsMargin          = atoi(Value);
   else if (!strcasecmp(Name, "RecordingDirs"))       RecordingDirs      = atoi(Value);
+  else if (!strcasecmp(Name, "HotStandby"))          HotStandby         = atoi(Value);
   else if (!strcasecmp(Name, "TvMode"))              TvMode             = atoi(Value);
+  else if (!strcasecmp(Name, "VCRMode"))             VCRMode            = atoi(Value);
   else if (!strcasecmp(Name, "VideoDisplayFormat"))  VideoDisplayFormat = atoi(Value);
   else if (!strcasecmp(Name, "VideoFormat"))         VideoFormat        = atoi(Value);
   else if (!strcasecmp(Name, "UpdateChannels"))      UpdateChannels     = atoi(Value);
@@ -482,7 +486,9 @@ bool cSetup::Save(void)
   Store("UseVps",             UseVps);
   Store("VpsMargin",          VpsMargin);
   Store("RecordingDirs",      RecordingDirs);
+  Store("HotStandby", 	      HotStandby);
   Store("TvMode", 	      TvMode);
+  Store("VCRMode", 	      VCRMode);
   Store("VideoDisplayFormat", VideoDisplayFormat);
   Store("VideoFormat",        VideoFormat);
   Store("UpdateChannels",     UpdateChannels);

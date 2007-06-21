@@ -29,6 +29,9 @@ typedef unsigned char uchar;
 
 extern int SysLogLevel;
 
+bool getIaMode();
+void setIaMode(bool mode);
+
 //M7X0 BEGIN AK
 #if BYTE_ORDER == BIG_ENDIAN
 #define BE2HOST(a) (a)

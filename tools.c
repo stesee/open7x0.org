@@ -35,6 +35,18 @@ extern "C" {
 
 int SysLogLevel = 3;
 
+//m7x0 IaMode helper
+bool IaMode=false;
+
+void setIaMode(bool mode){
+    dsyslog("DEBUG: set IaMode -> %d",mode);
+    IaMode = mode;
+    }
+bool getIaMode(){
+    return IaMode;
+    }
+
+
 #define MAXSYSLOGBUF 256
 //M7X0 BEGIN AK
 #ifndef OSDPAINTER
@@ -49,6 +61,7 @@ void syslog_with_tid(int priority, const char *format, ...)
 }
 #endif
 //M7X0 END AK
+
 int BCD2INT(int x)
 {
   return ((1000000 * BCDCHARTOINT((x >> 24) & 0xFF)) +

@@ -152,7 +152,7 @@ cDevice::cDevice(void)
   cardIndex = nextCardIndex++;
 
   SetDescription("receiver on device %d", CardIndex() + 1);
-
+  
   SetVideoFormat(eVideoFormat(Setup.VideoFormat));
   SetTvMode(Setup.TvMode);
 
@@ -285,6 +285,10 @@ void cDevice::SetTvMode(bool)
 {
 }
 
+void cDevice::SetVCRMode(bool)
+{
+}
+
 cSpuDecoder *cDevice::GetSpuDecoder(void)
 {
   return NULL;
@@ -391,9 +395,6 @@ void cDevice::SetVideoDisplayFormat(eVideoDisplayFormat VideoDisplayFormat)
                     break;
                case vdfLetterBox:
                     spuDecoder->setScaleMode(cSpuDecoder::eSpuLetterBox);
-                    break;
-               case vdfCenterCutOut:
-                    spuDecoder->setScaleMode(cSpuDecoder::eSpuNormal);
                     break;
                }
         }

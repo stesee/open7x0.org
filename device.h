@@ -70,8 +70,7 @@ enum eVideoSystem { vsPAL,
                   };
 
 enum eVideoDisplayFormat { vdfPanAndScan,
-                           vdfLetterBox,
-                           vdfCenterCutOut
+                           vdfLetterBox
                          };
 //m7x0 auto aspect			 
 enum eVideoFormat { vf4_3,
@@ -205,6 +204,7 @@ public:
   virtual void CheckStreamAspect();
   virtual void SetTvSettings(bool);
   virtual void SetTvMode(bool);
+  virtual void SetVCRMode(bool);
 // SPU facilities
 
 public:

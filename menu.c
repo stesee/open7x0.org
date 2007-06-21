@@ -2338,8 +2338,6 @@ cMenuSetupDVB::cMenuSetupDVB(void)
   videoDisplayFormatTexts[0] = tr("pan&scan");
   videoDisplayFormatTexts[1] = tr("letterbox");
 //M7X0 BEGIN GA
-  //no driver support on m7x0
-  //videoDisplayFormatTexts[2] = tr("center cut out");
 
   //m7x0 auto aspect
   videoFormatTexts[0] = tr("4:3");
@@ -2364,8 +2362,12 @@ void cMenuSetupDVB::Setup(void)
   Clear();
 
   Add(new cMenuEditIntItem( tr("Setup.DVB$Primary DVB interface"), &data.PrimaryDVB, 1, cDevice::NumDevices()));
+  //m7x0 HotStandby
+  Add(new cMenuEditBoolItem(tr("Setup.DVB$Hot Standby"),	   &data.HotStandby, "off", "on"));
   //m7x0 TvMode fbas svideo
   Add(new cMenuEditBoolItem(tr("Setup.DVB$TV mode"),		   &data.TvMode, "fbas", "svideo"));
+  //m7x0 VCRMode fbas svideo
+  Add(new cMenuEditBoolItem(tr("Setup.DVB$VCR mode"),		   &data.VCRMode, "fbas", "svideo"));
   //m7x0 auto aspect
   Add(new cMenuEditStraItem(tr("Setup.DVB$Video format"),          &data.VideoFormat, 3, videoFormatTexts));
 //M7X0 BEGIN GA
@@ -2394,6 +2396,7 @@ eOSState cMenuSetupDVB::ProcessKey(eKeys Key)
   int oldVideoFormat = ::Setup.VideoFormat;
   int newVideoFormat = data.VideoFormat;
   bool oldTvMode = ::Setup.TvMode;
+  bool oldVCRMode = ::Setup.VCRMode;
   int oldnumAudioLanguages = numAudioLanguages;
   eOSState state = cMenuSetupBase::ProcessKey(Key);
 
@@ -2429,6 +2432,8 @@ eOSState cMenuSetupDVB::ProcessKey(eKeys Key)
         cDevice::PrimaryDevice()->SetVideoFormat(eVideoFormat(::Setup.VideoFormat));
      if (::Setup.TvMode != oldTvMode)
         cDevice::PrimaryDevice()->SetTvMode(::Setup.TvMode);
+     if (::Setup.VCRMode != oldVCRMode)
+        cDevice::PrimaryDevice()->SetVCRMode(::Setup.VCRMode);
      }
   return state;
 }
