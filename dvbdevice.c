@@ -3928,6 +3928,7 @@ void cDvbDevice::CheckStreamAspect()
 void cDvbDevice::SetTvSettings(bool settv){
     dsyslog("DEBUG: set tv settings-> %d", settv);
     if(settv){
+      SetVolumeDevice(IsMute() ? 0 : CurrentVolume());
       SetTvMode(Setup.TvMode);
       SetVideoFormat(eVideoFormat(Setup.VideoFormat));
     }else{
@@ -3943,17 +3944,17 @@ void cDvbDevice::SetTvSettings(bool settv){
 //m7x0 TvMode fbas svideo
 void cDvbDevice::SetTvMode(bool tvmode){
     dsyslog("DEBUG: set tv mode -> %d", tvmode);
-    int avs = open("/dev/avswitch", O_WRONLY);
     if(getIaMode()){
-    if(avs== -1) 
-      esyslog("m7x0 can not open /dev/avswitch");
-    if(tvmode){
-	CHECK(ioctl(avs, AVSWCMD_TV_SVIDEO, 0));
-    }else{
-	CHECK(ioctl(avs, AVSWCMD_TV_FBAS, 0));
-    }
-    }
+    int avs = open("/dev/avswitch", O_WRONLY);
+      if(avs== -1) 
+        esyslog("m7x0 can not open /dev/avswitch");
+      if(tvmode){
+	  CHECK(ioctl(avs, AVSWCMD_TV_SVIDEO, 0));
+      }else{
+	  CHECK(ioctl(avs, AVSWCMD_TV_FBAS, 0));
+      }
     close(avs);
+    }
 }
 
 //m7x0 TvMode fbas svideo
