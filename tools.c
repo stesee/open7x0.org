@@ -36,7 +36,7 @@ extern "C" {
 int SysLogLevel = 3;
 
 //m7x0 IaMode helper
-bool IaMode=false;
+bool IaMode=true;
 
 void setIaMode(bool mode){
     dsyslog("DEBUG: set IaMode -> %d",mode);

@@ -598,6 +598,9 @@ int main(int argc, char *argv[])
 
   cFont::SetCode(I18nCharSets()[Setup.OSDLanguage]);
 
+  if(Setup.HotStandby)
+    setIaMode(0);
+  
   // Recordings:
 
   Recordings.Update();
@@ -749,7 +752,7 @@ int main(int argc, char *argv[])
         // Make sure we have a visible programme in case device usage has changed:
         if (!EITScanner.Active() && cDevice::PrimaryDevice()->HasDecoder() && !cDevice::PrimaryDevice()->HasProgramme()) {
            static time_t lastTime = 0;
-           if (time(NULL) - lastTime > MINCHANNELWAIT) {
+           if (!scanning_on_receiving_device && time(NULL) - lastTime > MINCHANNELWAIT) {
               cChannel *Channel = Channels.GetByNumber(cDevice::CurrentChannel());
               if (Channel && (Channel->Vpid() || Channel->Apid(0))) {
                  if (!Channels.SwitchTo(cDevice::CurrentChannel()) // try to switch to the original channel...

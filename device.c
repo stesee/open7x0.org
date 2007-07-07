@@ -19,6 +19,8 @@
 #include "status.h"
 #include "transfer.h"
 
+bool scanning_on_receiving_device = false;
+
 // --- cPesAssembler ---------------------------------------------------------
 
 class cPesAssembler {

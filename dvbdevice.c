@@ -3910,8 +3910,8 @@ void cDvbDevice::SetVideoFormat(eVideoFormat VideoFormat)
 void cDvbDevice::CheckStreamAspect()
 {
   int asset, asget;
-  CHECK(ioctl(fd_video_v4l, M7X0_GET_STREAM_ASPECT_RATIO, &asset));
-  CHECK(ioctl(fd_video_v4l, M7X0_GET_TV_ASPECT_RATIO, &asget));
+  CHECK(ioctl(fd_video, M7X0_GET_STREAM_ASPECT_RATIO, &asset));
+  CHECK(ioctl(fd_video, M7X0_GET_TV_ASPECT_RATIO, &asget));
   //dsyslog("DEBUG: stream as -> %i", asset);
   if (asset != asget) {
      if (asset==3) {

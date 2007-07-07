@@ -36,6 +36,8 @@
 #define TS_SYNC_BYTE     0x47
 #define PID_MASK_HI      0x1F
 
+extern bool scanning_on_receiving_device;
+
 enum eSetChannelResult { scrOk, scrNotAvailable, scrNoTransfer, scrFailed };
 
 enum ePlayMode { pmNone,           // audio/video from decoder
@@ -637,5 +639,7 @@ public:
   ~cTSBuffer();
   uchar *Get(void);
   };
+
+
 
 #endif //__DEVICE_H
