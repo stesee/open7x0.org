@@ -1266,7 +1266,7 @@ int main(int argc, char *argv[])
            time_t Now = time(NULL);
            if (Now - LastActivity > ACTIVITYTIMEOUT) {
               // Shutdown:
-              if (!Setup.HotStandby && Shutdown && (Setup.MinUserInactivity || LastActivity == 1) && Now - LastActivity > Setup.MinUserInactivity * 60) {
+              if (Shutdown && (Setup.MinUserInactivity || LastActivity == 1) && Now - LastActivity > Setup.MinUserInactivity * 60) {
                  cTimer *timer = Timers.GetNextActiveTimer();
                  time_t Next  = timer ? timer->StartTime() : 0;
                  time_t Delta = timer ? Next - Now : 0;
@@ -1280,7 +1280,15 @@ int main(int argc, char *argv[])
                     else
                        LastActivity = 1;
                     }
-                 if (timer && Delta < Setup.MinEventTimeout * 60 && ForceShutdown) {
+                 if (Setup.HotStandby){
+		    if(getIaMode()){
+			dsyslog("DEBUG: HotStandby ACTIVITYTIMEOUT");
+			setIaMode(0);
+			cDevice::PrimaryDevice()->SetTvSettings(0);
+		    }
+		    continue;
+		    }
+		 if (timer && Delta < Setup.MinEventTimeout * 60 && ForceShutdown) {
                     Delta = Setup.MinEventTimeout * 60;
                     Next = Now + Delta;
                     timer = NULL;
