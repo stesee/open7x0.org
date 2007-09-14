@@ -118,9 +118,8 @@ void cLircRemote::Action(void)
                     }
                  }
            }
-//M7X0 BEGIN AK (especially for Lemmi ;))
-        if (ready && ret > 6) {
-//M7X0 END AK
+
+        if (ready && ret > 21) {
            int count;
            char KeyName[LIRC_KEY_BUF];
            if (sscanf(buf, "%*x %x %29s", &count, KeyName) != 2) { // '29' in '%29s' is LIRC_KEY_BUF-1!

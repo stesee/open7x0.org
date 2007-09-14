@@ -3913,7 +3913,7 @@ void cDvbDevice::CheckStreamAspect()
   CHECK(ioctl(fd_video, M7X0_GET_STREAM_ASPECT_RATIO, &asset));
   CHECK(ioctl(fd_video, M7X0_GET_TV_ASPECT_RATIO, &asget));
   //dsyslog("DEBUG: stream as -> %i", asset);
-  if (asset != asget) {
+  if (asset != asget && getIaMode()) {
      if (asset==3) {
         dsyslog("DEBUG: auto set 16/9");
         SetVideoFormat(eVideoFormat(1));

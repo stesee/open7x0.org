@@ -155,9 +155,6 @@ cDevice::cDevice(void)
 
   SetDescription("receiver on device %d", CardIndex() + 1);
   
-  SetVideoFormat(eVideoFormat(Setup.VideoFormat));
-  SetTvMode(Setup.TvMode);
-
   mute = false;
   volume = Setup.CurrentVolume;
 
@@ -263,6 +260,7 @@ bool cDevice::SetPrimaryDevice(int n)
         primaryDevice->MakePrimaryDevice(false);
      primaryDevice = device[n];
      primaryDevice->MakePrimaryDevice(true);
+     primaryDevice->SetTvMode(Setup.TvMode);
      primaryDevice->SetVideoFormat(eVideoFormat(Setup.VideoFormat));
      return true;
      }
@@ -281,14 +279,17 @@ void cDevice::CheckStreamAspect()
 
 void cDevice::SetTvSettings(bool)
 {
+    dsyslog("cDevice::SetTvSettings(bool): This should nevver called");
 }
 
 void cDevice::SetTvMode(bool)
 {
+    dsyslog("cDevice::SetTvMode(bool): This should nevver called");
 }
 
 void cDevice::SetVCRMode(bool)
 {
+    dsyslog("cDevice::SetVCRMode(bool): This should nevver called");
 }
 
 cSpuDecoder *cDevice::GetSpuDecoder(void)
@@ -405,6 +406,7 @@ void cDevice::SetVideoDisplayFormat(eVideoDisplayFormat VideoDisplayFormat)
 
 void cDevice::SetVideoFormat(eVideoFormat VideoFormat)
 {
+    dsyslog("cDevice::SetVideoFormat(eVideoFormat VideoFormat): This should nevver called");
 }
 
 eVideoSystem cDevice::GetVideoSystem(void)

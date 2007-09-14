@@ -868,6 +868,7 @@ cChannels Channels;
 cChannels::cChannels(void)
 {
   maxNumber = 0;
+  beingEdited = 0;
   modified = CHANNELSMOD_NONE;
 }
 
