@@ -273,23 +273,24 @@ bool cDevice::HasDecoder(void) const
   return false;
 }
 
-void cDevice::CheckStreamAspect()
+void cDevice::CheckStreamAspect(bool)
 {
+    dsyslog("cDevice::CheckStreamAspect(bool): This should be never called");
 }
 
 void cDevice::SetTvSettings(bool)
 {
-    dsyslog("cDevice::SetTvSettings(bool): This should nevver called");
+    dsyslog("cDevice::SetTvSettings(bool): This should be never called");
 }
 
 void cDevice::SetTvMode(bool)
 {
-    dsyslog("cDevice::SetTvMode(bool): This should nevver called");
+    dsyslog("cDevice::SetTvMode(bool): This should be never called");
 }
 
 void cDevice::SetVCRMode(bool)
 {
-    dsyslog("cDevice::SetVCRMode(bool): This should nevver called");
+    dsyslog("cDevice::SetVCRMode(bool): This should be never called");
 }
 
 cSpuDecoder *cDevice::GetSpuDecoder(void)
@@ -406,7 +407,7 @@ void cDevice::SetVideoDisplayFormat(eVideoDisplayFormat VideoDisplayFormat)
 
 void cDevice::SetVideoFormat(eVideoFormat VideoFormat)
 {
-    dsyslog("cDevice::SetVideoFormat(eVideoFormat VideoFormat): This should nevver called");
+    dsyslog("cDevice::SetVideoFormat(eVideoFormat VideoFormat): This should be never called");
 }
 
 eVideoSystem cDevice::GetVideoSystem(void)
@@ -850,8 +851,9 @@ eSetChannelResult cDevice::SetChannel(const cChannel *Channel, bool LiveView)
   // If this card can't receive this channel, we must not actually switch
   // the channel here, because that would irritate the driver when we
   // start replaying in Transfer Mode immediately after switching the channel:
-  bool NeedsTransferMode = (LiveView && IsPrimaryDevice() && !ProvidesChannel(Channel, Setup.PrimaryLimit, &NeedsDetachReceivers));
-
+//M7X0 BEGIN AK
+  bool NeedsTransferMode = (LiveView && IsPrimaryDevice() && !ProvidesChannel(Channel, Setup.PrimaryLimit, &NeedsDetachReceivers, true));
+//M7X0 END AK
   eSetChannelResult Result = scrOk;
 
   // If this DVB card can't receive this channel, let's see if we can
@@ -1454,7 +1456,7 @@ bool cDevice::Receiving(bool CheckAny) const
 bool cDevice::FreeReceiverSlot(void) const
 {
   for (int i = 0; i < MAXRECEIVERS; i++) {
-      if (!receiver[i])
+      if (!receiver[i] || receiver[i]->priority < 0)
          return true;
       }
   return false;
@@ -1639,39 +1641,63 @@ bool cDevice::AttachReceiver(cReceiver *Receiver)
      otherLock = 0;
      actionLock = 0;
      }
-  for (int i = 0; i < MAXRECEIVERS; i++) {
-      if (!receiver[i]) {
-#ifdef USE_HW_VIDEO_FRAME_EVENTS
-         if (!AddPid(Receiver->pids[0],Receiver->WantsFrameEvents()?ptRecVideo:ptOther))
-            return false;
 
-         for (int n = 1; n < Receiver->numPids; n++) {
+  int i;
+  for (i = 0; i < MAXRECEIVERS; i++) {
+      if (!receiver[i])
+         break;
+      }
+
+  if (i == MAXRECEIVERS && Receiver->priority >= 0) {
+     for (i = 0; i < MAXRECEIVERS; i++) {
+         if (receiver[i] && receiver[i]->priority < 0) {
+            Detach(receiver[i]);
+            break;
+            }
+         }
+     }
+
+  if (i == MAXRECEIVERS) {
+     for (i = 0; i < MAXRECEIVERS; i++) {
+         if (receiver[i] && receiver[i]->priority < Receiver->priority) {
+            Detach(receiver[i]);
+            break;
+            }
+         }
+     }
+  if (i == MAXRECEIVERS) {
+     esyslog("ERROR: no free receiver slot!");
+     return false;
+     }
+
+#ifdef USE_HW_VIDEO_FRAME_EVENTS
+  if (!AddPid(Receiver->pids[0],Receiver->WantsFrameEvents()?ptRecVideo:ptOther))
+     return false;
+
+  for (int n = 1; n < Receiver->numPids; n++) {
 #else
-         for (int n = 0; n < Receiver->numPids; n++) {
+  for (int n = 0; n < Receiver->numPids; n++) {
 #endif
-             if (!AddPid(Receiver->pids[n])) {
-                for ( ; n-- > 0; )
-                    DelPid(Receiver->pids[n]);
-                return false;
-                }
-             }
-         Receiver->Activate(true);
-         //Lock();
-         FasterLockOther();
-         Receiver->device = this;
-         receiver[i] = Receiver;
-         //Unlock();
-         FasterUnlockOther();
-//M7X0 END AK
-         if (!Running())
-            Start();
-         if (ciHandler)
-            ciHandler->StartDecrypting();
-         return true;
+      if (!AddPid(Receiver->pids[n])) {
+         for ( ; n-- > 0; )
+             DelPid(Receiver->pids[n]);
+         return false;
          }
       }
-  esyslog("ERROR: no free receiver slot!");
-  return false;
+  Receiver->Activate(true);
+  //Lock();
+  FasterLockOther();
+  Receiver->device = this;
+  receiver[i] = Receiver;
+  //Unlock();
+  FasterUnlockOther();
+
+  if (!Running())
+     Start();
+  if (ciHandler)
+     ciHandler->StartDecrypting();
+  return true;
+//M7X0 END AK
 }
 
 //M7X0 BEGIN AK

@@ -56,7 +56,7 @@ public:
   virtual bool Ready(void);
   virtual int ProvidesCa(const cChannel *Channel) const;
   virtual bool HasDecoder(void) const;
-  virtual void CheckStreamAspect();
+  virtual void CheckStreamAspect(bool);
   virtual void SetTvSettings(bool);
   virtual void SetTvMode(bool);
   virtual void SetVCRMode(bool);

@@ -3893,7 +3893,7 @@ void cDvbDevice::SetVideoFormat(eVideoFormat VideoFormat)
 		break;
 	    case vfauto:
 		dsyslog("DEBUG: m7x0 auto aspect");
-		CheckStreamAspect();
+		CheckStreamAspect(1);
 		break;
       }
       close(avs);
@@ -3907,13 +3907,13 @@ void cDvbDevice::SetVideoFormat(eVideoFormat VideoFormat)
 }
 
 //m7x0 auto aspect
-void cDvbDevice::CheckStreamAspect()
+void cDvbDevice::CheckStreamAspect(bool force)
 {
   int asset, asget;
   CHECK(ioctl(fd_video, M7X0_GET_STREAM_ASPECT_RATIO, &asset));
   CHECK(ioctl(fd_video, M7X0_GET_TV_ASPECT_RATIO, &asget));
   //dsyslog("DEBUG: stream as -> %i", asset);
-  if (asset != asget && getIaMode()) {
+  if ((asset != asget && getIaMode()) || force ) {
      if (asset==3) {
         dsyslog("DEBUG: auto set 16/9");
         SetVideoFormat(eVideoFormat(1));
@@ -3957,7 +3957,7 @@ void cDvbDevice::SetTvMode(bool tvmode){
     }
 }
 
-//m7x0 TvMode fbas svideo
+//m7x0 VCRMode fbas svideo
 void cDvbDevice::SetVCRMode(bool vcrmode){
     dsyslog("DEBUG: set vcr mode -> %d", vcrmode);
     int avs = open("/dev/avswitch", O_WRONLY);

@@ -3150,13 +3150,15 @@ void cDisplayChannel::Refresh(void)
 
 cChannel *cDisplayChannel::NextAvailableChannel(cChannel *Channel, int Direction)
 {
+//M7X0 BEGIN AK
   if (Direction) {
      while (Channel) {
            Channel = Direction > 0 ? Channels.Next(Channel) : Channels.Prev(Channel);
-           if (Channel && !Channel->GroupSep() && (cDevice::PrimaryDevice()->ProvidesChannel(Channel, Setup.PrimaryLimit) || cDevice::GetDevice(Channel, 0)))
+           if (Channel && !Channel->GroupSep() && (cDevice::PrimaryDevice()->ProvidesChannel(Channel, Setup.PrimaryLimit, NULL, true) || cDevice::GetDevice(Channel, 0, NULL, true)))
               return Channel;
            }
      }
+//M7X0 END AK
   return NULL;
 }
 
@@ -3649,10 +3651,12 @@ void cRecordControl::Stop(void)
 
 bool cRecordControl::Process(time_t t)
 {
-  if (!recorder || !timer || !timer->Matches(t))
+//M7X0 BEGIN AK
+  if (!recorder || !recorder->Activated() || !timer || !timer->Matches(t))
      return false;
   AssertFreeDiskSpace(timer->Priority());
   return true;
+//M7X0 END AK
 }
 
 // --- cRecordControls -------------------------------------------------------

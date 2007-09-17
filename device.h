@@ -203,7 +203,7 @@ public:
          ///< in order to preserve resources for other recordings.
   virtual bool HasDecoder(void) const;
          ///< Tells whether this device has an MPEG decoder.
-  virtual void CheckStreamAspect();
+  virtual void CheckStreamAspect(bool);
   virtual void SetTvSettings(bool);
   virtual void SetTvMode(bool);
   virtual void SetVCRMode(bool);

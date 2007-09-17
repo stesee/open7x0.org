@@ -180,6 +180,7 @@ cRecorder::cRecorder(const char *FileName, int Ca, int Priority, int VPid, const
   setFrameEventsWanted(VPid);
 #endif
   SpinUpDisk(FileName);
+  activated = false;
 #ifdef DISABLE_RINGBUFFER_IN_RECEIVER
   lostBytes = 0;
 #else
@@ -209,6 +210,7 @@ cRecorder::~cRecorder()
 
 void cRecorder::Activate(bool On)
 {
+  activated = On;
   if (On) {
      writer->Start();
 #ifndef DISABLE_RINGBUFFER_IN_RECEIVER

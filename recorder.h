@@ -26,6 +26,7 @@ class cRecorder : public cReceiver
 #endif
 private:
 //M7X0 BEGIN AK
+  bool activated;
 #ifdef DISABLE_RINGBUFFER_IN_RECEIVER
   int lostBytes;
 #else
@@ -49,12 +50,14 @@ protected:
 #ifndef DISABLE_RINGBUFFER_IN_RECEIVER
   virtual void Action(void);
 #endif
-//M7X0 END AK
+
 public:
   cRecorder(const char *FileName, int Ca, int Priority, int VPid, const int *APids, const int *DPids, const int *SPids);
                // Creates a new recorder that requires conditional access Ca, has
                // the given Priority and will record the given PIDs into the file FileName.
   virtual ~cRecorder();
+  bool Activated(void) const { return activated; }
+//M7X0 END AK
   };
 
 #endif //__RECORDER_H

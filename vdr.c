@@ -1111,7 +1111,8 @@ int main(int argc, char *argv[])
                      break;
 		     */
 	          setIaMode(0);
-		  cDevice::PrimaryDevice()->SetTvSettings(0);		     
+		  cDevice::PrimaryDevice()->SetTvSettings(0);
+		  break;		     
                   }
                //if (cPluginManager::Active(tr("shut down anyway?")))
                  // break;
@@ -1130,6 +1131,7 @@ int main(int argc, char *argv[])
                      */
 		     setIaMode(0);
 		     cDevice::PrimaryDevice()->SetTvSettings(0);
+		     break;
 		     }
                   }
                ForceShutdown = true;
@@ -1341,7 +1343,7 @@ int main(int argc, char *argv[])
 	//m7x0 auto aspect
 	//dsyslog("DEBUG: VideoFormet -> %i",eVideoFormat(Setup.VideoFormat));
 	if(eVideoFormat(Setup.VideoFormat)==2)
-	    cDevice::PrimaryDevice()->CheckStreamAspect();
+	    cDevice::PrimaryDevice()->CheckStreamAspect(0);
 	}
   if (Interrupted)
      isyslog("caught signal %d", Interrupted);
