@@ -2322,7 +2322,7 @@ private:
   int originalNumAudioLanguages;
   int numAudioLanguages;
   void Setup(void);
-  const char *videoDisplayFormatTexts[3];
+  const char *videoDisplayFormatTexts[2];
   const char *videoFormatTexts[3];
   const char *updateChannelsTexts[6];
 public:
