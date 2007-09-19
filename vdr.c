@@ -247,7 +247,7 @@ int main(int argc, char *argv[])
       { "epgfile",  required_argument, NULL, 'E' },
       { "grab",     required_argument, NULL, 'g' },
       { "help",     no_argument,       NULL, 'h' },
-      { "interactive",    no_argument, NULL, 'i' },
+      { "interactive", required_argument, NULL, 'i' },
       { "lib",      required_argument, NULL, 'L' },
       { "lirc",     optional_argument, NULL, 'l' | 0x100 },
       { "log",      required_argument, NULL, 'l' },
@@ -268,7 +268,7 @@ int main(int argc, char *argv[])
     };
 
   int c;
-  while ((c = getopt_long(argc, argv, "a:c:dD:E:g:hil:L:mp:P:r:s:t:u:v:Vw:", long_options, NULL)) != -1) {
+  while ((c = getopt_long(argc, argv, "a:c:dD:E:g:hi:l:L:mp:P:r:s:t:u:v:Vw:", long_options, NULL)) != -1) {
         switch (c) {
           case 'a': AudioCommand = optarg;
                     break;
@@ -291,8 +291,17 @@ int main(int argc, char *argv[])
                     break;
           case 'h': DisplayHelp = true;
                     break;
-          case 'i': setIaMode(0);
-                    break;
+          case 'i': {
+		      if(strcmp(optarg,"alarm") == 0){
+			setIaMode(0);
+                	break;
+		      }else if(strcmp(optarg,"user") == 0){
+			setIaMode(1);
+                	break;
+		      }else{
+		        setIaMode(1);
+			} 
+		    }
           case 'l': {
                       char *p = strchr(optarg, '.');
                       if (p)
@@ -1109,7 +1118,7 @@ int main(int argc, char *argv[])
 	          /*
                   if (!Interface->Confirm(tr("Recording - shut down anyway?")))
                      break;
-		     */
+		     */ 
 	          setIaMode(0);
 		  cDevice::PrimaryDevice()->SetTvSettings(0);
 		  break;		     
