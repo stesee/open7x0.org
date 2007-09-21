@@ -3278,6 +3278,7 @@ private:
 public:
   c7x0TSBuffer(int File, int CardIndex);
   ~c7x0TSBuffer();
+  bool Okay(void) const { return ok; }
 #ifdef USE_HW_VIDEO_FRAME_EVENTS
   uchar *Get(int &Length, int &Pid,eTsVideoFrame &videoFrame);
   void UseFrameEvents(bool On);
@@ -3310,7 +3311,7 @@ c7x0TSBuffer::c7x0TSBuffer(int File, int CardIndex)
   maxFill = 0;
   f = File;
   cardIndex = CardIndex;
-
+  ok = true;
 #ifdef USE_HW_VIDEO_FRAME_EVENTS
   eventsUsed= false;
 
@@ -3322,9 +3323,13 @@ c7x0TSBuffer::c7x0TSBuffer(int File, int CardIndex)
 
   ringBufferLeftLength =0 ;
   memset(&bufferState,0,sizeof(struct dvr_ring_buffer_state));
-
-  if ((dvrRingBuffer = (uchar *) mmap(NULL, DVR_RING_BUFFER_SIZE, PROT_READ, MAP_SHARED, f, 0)) == MAP_FAILED) {
+  if (f < 0) {
+     ok = false;
+     return;
+     }
+  if ((dvrRingBuffer = (uchar *) mmap(NULL, DVR_RING_BUFFER_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, f, 0)) == MAP_FAILED) {
      LOG_ERROR;
+     ok = false;
      }
 
 }
@@ -3332,6 +3337,8 @@ c7x0TSBuffer::c7x0TSBuffer(int File, int CardIndex)
 c7x0TSBuffer::~c7x0TSBuffer()
 {
   int lostbytes=0;
+  if (!ok)
+     return;
   CHECK(ioctl(f,DVR_GET_BYTESLOST,&lostbytes));
   munmap(dvrRingBuffer,DVR_RING_BUFFER_SIZE);
 #ifdef USE_HW_VIDEO_FRAME_EVENTS
@@ -4102,8 +4109,6 @@ bool cDvbDevice::SetPid(cPidHandle *Handle, int Type, bool On)
         // For debuging only
         dsyslog("DEBUG: Demux Stopping PID: %u Type: %d", Handle->pid, Type);
         CHECK(ioctl(Handle->handle, DMX_STOP));
-        if (Type == ptVideo) // let's only do this once
-           SetPlayMode(pmNone); // necessary to switch a PID from DMX_PES_VIDEO/AUDIO to DMX_PES_OTHER
         close(Handle->handle);
         Handle->handle = -1;
 #ifdef USE_HW_VIDEO_FRAME_EVENTS
@@ -4163,17 +4168,28 @@ void cDvbDevice::TurnOffLiveMode(bool LiveView)
   DetachAll(pidHandles[ptPcr].pid);
   DetachAll(pidHandles[ptTeletext].pid);
 #endif
-  if (LiveView) {
+
+  if (LiveView || pidHandles[ptAudio].pid || pidHandles[ptVideo].pid) {
      // Avoid noise while switching:
      CHECK(ioctl(fd_audio, AUDIO_STOP, 0));
      CHECK(ioctl(fd_video, VIDEO_STOP, 1));
+  /* This more than ugly but driver is more than ugly as bad.
+   * If switched to a radio channel, driver does not blank screen.
+   * Last frame is shown until another video-channel is selected.
+   * Even worse if started up with a radio channel video gets not
+   * shown if a video channel is selected.
+   * Have I mentioned the driver is buggy as hell, yet?
+   * This is the only way I found to get it blanking */
+     close(fd_video);
+     close(fd_audio);
+     fd_video    = DvbOpen(DEV_DVB_ADAPTER DEV_DVB_VIDEO,  CardIndex(), O_RDWR | O_NONBLOCK);
+     fd_audio    = DvbOpen(DEV_DVB_ADAPTER DEV_DVB_AUDIO,  CardIndex(), O_RDWR | O_NONBLOCK);
      }
   DelPid(pidHandles[ptAudio].pid, ptAudio);
   DelPid(pidHandles[ptVideo].pid, ptVideo);
   DelPid(pidHandles[ptPcr].pid, ptPcr);
   DelPid(pidHandles[ptTeletext].pid, ptTeletext);
   DelPid(pidHandles[ptDolby].pid, ptDolby);
-
 
 //M7X0 END AK
 }
@@ -4758,9 +4774,16 @@ int cDvbDevice::PlayAudio(const uchar *Data, int Length, uchar Id)
 bool cDvbDevice::OpenDvr(void)
 {
   CloseDvr();
-  fd_dvr = DvbOpen(DEV_DVB_ADAPTER DEV_DVB_DVR, CardIndex(), O_RDONLY | O_NONBLOCK , true);
-  if (fd_dvr >= 0)
+  fd_dvr = DvbOpen(DEV_DVB_ADAPTER DEV_DVB_DVR, CardIndex(), O_RDWR | O_NONBLOCK , true);
+  if (fd_dvr >= 0) {
      tsBuffer = new c7x0TSBuffer(fd_dvr, CardIndex() + 1);
+     if (!tsBuffer || !tsBuffer->Okay()) {
+        delete tsBuffer;
+        tsBuffer = NULL;
+        close(fd_dvr);
+        fd_dvr = -1;
+        }
+     }
 #ifdef USE_HW_VIDEO_FRAME_EVENTS
   if (pidHandles[ptRecVideo].pid)
      tsBuffer->UseFrameEvents(true);

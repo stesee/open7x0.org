@@ -60,6 +60,9 @@ cCuttingThread::~cCuttingThread()
 
 void cCuttingThread::Action(void)
 {
+//M7X0 BEGIN AK
+  SetPriority(19);
+//M7X0 END AK
   cMark *Mark = fromMarks.First();
   if (Mark) {
      fromFile = fromFileName->Open();

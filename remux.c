@@ -308,12 +308,11 @@ void cRepacker::HandleInputPesData(uchar *Data, int Count, const bool PacketStar
         // N.B. All backuped headers contains timestamps
         if (pesHeaderBackupLen)
            esyslog("PES header backup for stream 0x%hhX not used!",streamId);
+        pesHeaderBackupLen = 0;
         if (!inputPesHeaderDataNeed) {
            memcpy(pesHeaderBackup, inputPesHeaderBackup, inputPesHeaderBackupLen);
            pesHeaderBackupLen = inputPesHeaderBackupLen;
            }
-        else
-           pesHeaderBackupLen = 0;
         inputPesHeaderBackupLen = 0;
         }
 
@@ -322,7 +321,6 @@ void cRepacker::HandleInputPesData(uchar *Data, int Count, const bool PacketStar
      inputPacketDone = 0;
      inputPacketIllegal = false;
 
-#if 0
      if (Count >= 7) {
         const int sid = Data[3];
         if ((Data[0] | Data[1] | Data[2] - 1) ||
@@ -334,7 +332,7 @@ void cRepacker::HandleInputPesData(uchar *Data, int Count, const bool PacketStar
            return;
            }
 
-        inputPacketLength = BE2HOST(get_unaligned((uint16_t *)(Data + 4))) + 6;
+        inputPacketLength = ((Data[4] << 8) | Data[5]) + 6;
 
         int PayloadOffset = 0;
         bool ContinuationHeader = false;
@@ -377,6 +375,7 @@ void cRepacker::HandleInputPesData(uchar *Data, int Count, const bool PacketStar
      int c = min (7 - inputPesHeaderBackupLen, Count);
      memcpy(inputPesHeaderBackup + inputPesHeaderBackupLen, Data, c);
      inputPesHeaderBackupLen += c;
+     Data += c;
      Count -= c;
 
      if (inputPesHeaderBackupLen < 7)
@@ -384,7 +383,7 @@ void cRepacker::HandleInputPesData(uchar *Data, int Count, const bool PacketStar
      }
 
 
-  const int sid = inputPesHeaderBackupLen[3];
+  const int sid = inputPesHeaderBackup[3];
   if ((inputPesHeaderBackup[0] | inputPesHeaderBackup[1] | inputPesHeaderBackup[2] - 1) ||
       streamType == VIDEO_STREAM_S && (sid & 0xF0) != VIDEO_STREAM_S ||
       streamType == AUDIO_STREAM_S && (sid & 0xE0) != AUDIO_STREAM_S ||
@@ -396,7 +395,7 @@ void cRepacker::HandleInputPesData(uchar *Data, int Count, const bool PacketStar
      }
 
   inputPesHeaderBackup[3] = streamId;
-  inputPacketLength = BE2HOST(*((uint16_t *)(inputPesHeaderBackup + 4))) + 6;
+  inputPacketLength = ((inputPesHeaderBackup[4] << 8) | inputPesHeaderBackup[5]) + 6;
 
   int PayloadOffset = 0;
   bool ContinuationHeader = false;
@@ -407,6 +406,7 @@ void cRepacker::HandleInputPesData(uchar *Data, int Count, const bool PacketStar
         memcpy(inputPesHeaderBackup + inputPesHeaderBackupLen, Data, c);
         inputPesHeaderBackupLen += c;
         Count -= c;
+        Data += c;
         }
 
   if (mpegLevel == phNeedMoreData)
@@ -419,167 +419,17 @@ void cRepacker::HandleInputPesData(uchar *Data, int Count, const bool PacketStar
      return;
      }
 
-   inputPesHeaderDataNeed = false;
-   inputPacketDone = inputPesHeaderBackupLen;
-   if (ContinuationHeader)
-      inputPesHeaderBackupLen = 0;
+  inputPesHeaderDataNeed = false;
+  inputPacketDone = inputPesHeaderBackupLen;
+  if (ContinuationHeader)
+     inputPesHeaderBackupLen = 0;
 
 #ifdef USE_HW_VIDEO_FRAME_EVENTS
-   Repack(Data, Count, true, videoFrame);
+  Repack(Data, Count, true, videoFrame);
 #else
-   Repack(Data, Count, true);
+  Repack(Data, Count, true);
 #endif
   inputPacketDone += Count;
-
-
-#endif
-     if (Count >= 6 && !(Data[0] | Data[1] | Data[2] -1)) {
-        const int sid = Data[3];
-        if (streamType == VIDEO_STREAM_S && (sid & 0xF0) != VIDEO_STREAM_S ||
-            streamType == AUDIO_STREAM_S && (sid & 0xE0) != AUDIO_STREAM_S ||
-            streamType == PRIVATE_STREAM1 && sid != PRIVATE_STREAM1) {
-           inputPacketIllegal = true;
-           return;
-           }
-
-        inputPacketLength = ((Data[4] << 8) | Data[5]) + 6;
-
-        int PayloadOffset = 0;
-        bool ContinuationHeader = false;
-        mpegLevel = AnalyzePesHeader(Data, Count, PayloadOffset, &ContinuationHeader);
-
-        if (mpegLevel > phInvalid) {
-           inputPesHeaderDataNeed = false;
-           inputPacketDone = PayloadOffset;
-           Count -= PayloadOffset;
-
-           if (ContinuationHeader) {
-              inputPesHeaderBackupLen = 0;
-#ifdef USE_HW_VIDEO_FRAME_EVENTS
-              Repack(Data + PayloadOffset, Count, true, videoFrame);
-#else
-              Repack(Data + PayloadOffset, Count, true);
-#endif
-              inputPacketDone += Count;
-              return;
-              }
-
-           inputPesHeaderBackupLen = PayloadOffset;
-           memcpy(inputPesHeaderBackup, Data, PayloadOffset);
-           inputPesHeaderBackup[3] = streamId;
-
-#ifdef USE_HW_VIDEO_FRAME_EVENTS
-           Repack(Data + PayloadOffset, Count, true, videoFrame);
-#else
-           Repack(Data + PayloadOffset, Count, true);
-#endif
-
-           inputPacketDone += Count;
-           return;
-           }
-
-        if (mpegLevel == phInvalid) {
-           inputPacketIllegal = true;
-           return;
-           }
-
-        inputPesHeaderBackupLen = Count;
-        memcpy(inputPesHeaderBackup, Data, Count);
-        inputPesHeaderBackup[3] = streamId;
-        return;
-        }
-     }
-
-  // This only happens if PES header is spilt across packets
-  // or not start at beginning of ts-packet (rare)
-  while (Count > 0 && inputPesHeaderDataNeed) {
-        switch (inputPesHeaderBackupLen) {
-          case 0:
-          case 1:
-               if (!*Data)
-                  inputPesHeaderBackupLen++;
-               else
-                  inputPesHeaderBackupLen = 0;
-               Data++;
-               Count--;
-               break;
-          case 2:
-               if (*Data == 1)
-                  inputPesHeaderBackupLen++;
-               else if (*Data)
-                  inputPesHeaderBackupLen = 0;
-               Data++;
-               Count--;
-               break;
-          case 3:
-               { const int sid = *Data;
-               if (streamType == VIDEO_STREAM_S && (sid & 0xF0) != VIDEO_STREAM_S ||
-                   streamType == AUDIO_STREAM_S && (sid & 0xE0) != AUDIO_STREAM_S ||
-                   streamType == PRIVATE_STREAM1 && sid != PRIVATE_STREAM1) {
-                  inputPacketIllegal = true;
-                  inputPesHeaderBackupLen = 0;
-                  return;
-                  } }
-               inputPesHeaderBackup[0] = inputPesHeaderBackup[1] = inputPesHeaderBackup[4] = inputPesHeaderBackup[5] = 0;
-               inputPesHeaderBackup[2] = 1;
-               inputPesHeaderBackup[3] = streamId;
-               inputPesHeaderBackupLen++;
-               Data++;
-               Count--;
-               break;
-          case 4:
-               inputPacketLength = *Data;
-               inputPesHeaderBackupLen++;
-               Data++;
-               Count--;
-               break;
-          case 5:
-               inputPacketLength <<= 8;
-               inputPacketLength |= *Data;
-               inputPacketLength += 6;
-               inputPesHeaderBackupLen++;
-               Data++;
-               Count--;
-               break;
-          default:
-               int PayloadOffset = 0;
-               bool ContinuationHeader = false;
-               mpegLevel = AnalyzePesHeader(inputPesHeaderBackup, inputPesHeaderBackupLen, PayloadOffset, &ContinuationHeader);
-
-               if (mpegLevel == phNeedMoreData) {
-                  if (PayloadOffset - inputPesHeaderBackupLen <= 0 || Count == 1) {
-                     inputPesHeaderBackup[inputPesHeaderBackupLen++] = *Data;
-                     Data++;
-                     Count--;
-                     break;
-                     }
-                  int copy = min(PayloadOffset - inputPesHeaderBackupLen,Count);
-                  memcpy(inputPesHeaderBackup + inputPesHeaderBackupLen, Data, copy);
-                  inputPesHeaderBackupLen += copy;
-                  Data += copy;
-                  Count -= copy;
-                  break;
-                  }
-
-               if (mpegLevel == phInvalid) {
-                  inputPacketIllegal = true;
-                  inputPesHeaderBackupLen = 0;
-                  return;
-                  }
-
-               inputPesHeaderDataNeed = false;
-               inputPacketDone = inputPesHeaderBackupLen;
-               if (ContinuationHeader)
-                  inputPesHeaderBackupLen = 0;
-#ifdef USE_HW_VIDEO_FRAME_EVENTS
-               Repack(Data, Count, true, videoFrame);
-#else
-               Repack(Data, Count, true);
-#endif
-               inputPacketDone += Count;
-          }
-        }
-
 }
 
 void cRepacker::CreatePesHeader(const bool ContinuationHeader, const bool UseCurrentHeader)
@@ -820,19 +670,9 @@ void cVideoRepacker::HandleStartCode(const uchar *const Data, const uchar *&Payl
              // The overcommited Data may be at maximum 2 bytes long in this case.
              // This data is saved in scanner and put before start of this run,
              // so we need not copy anything in here.
-#ifdef DISABLE_RINGBUFFER_IN_RECEIVER
-        const uchar *excessData = fragmentData + fragmentLen + bite;
-#endif
         PushOutVideoPacket(Payload,bite);
 
         CreatePesHeader(true);
-#ifdef DISABLE_RINGBUFFER_IN_RECEIVER
-        while (bite < 0) {
-             // append the excess data here
-             bite++;
-             fragmentData[fragmentLen++] = *excessData++;
-             }
-#endif
         Payload += bite;
         }
 
@@ -853,20 +693,10 @@ void cVideoRepacker::HandleStartCode(const uchar *const Data, const uchar *&Payl
 
      // Scanner is copied befor payload of this run. So startcode
      // is allways fully present.
-#ifdef DISABLE_RINGBUFFER_IN_RECEIVER
-     fragmentData[fragmentLen++] = 0;
-     fragmentData[fragmentLen++] = 0;
-     fragmentData[fragmentLen++] = 1;
-     Payload = Data;
-     // as there is no length information available, assume the
-     // maximum we can hold in one PES packet
-     packetTodo = maxPacketSize - fragmentLen;
-#else
      Payload = Data - 3;
      // as there is no length information available, assume the
      // maximum we can hold in one PES packet
      packetTodo = maxPacketSize - fragmentLen - 3;
-#endif
      // go on with finding the picture data
      state = findPicture;
      }
@@ -915,34 +745,15 @@ void cVideoRepacker::Repack(uchar *Data, int Count, const bool PacketStart)
 #endif
 {
   const uchar *const limit = Data + Count;
-#ifdef DISABLE_RINGBUFFER_IN_RECEIVER
-  const uchar *data = Data;
-  bool beginStartCode = false;
-  for (int i = 0 ; i < 3 && data < limit; i++) {
-      if ((scanner & 0xFFFFFF) == 0x000001) {
-         const int code = *data++;
-         if (code == 0 || code == 0xB3 || code == 0xB8)
-            beginStartCode = true;
-         break;
-         }
-      scanner = (scanner << 8) | *data++;
-      }
-
-  if (Data < limit - 3)
-     scanner = getIntUnalignedBE(limit - 4);
-  else if (beginStartCode) {
-     scanner = 0xFFFFFFFF;
-     for (int i = 0; data + i < limit; i++)
-         scanner = (scanner << 8) | data[i];
-     }
-  data--;
-#else
+  uint32_t save_scan;
   // Store scanner at Data -4, we have always 4 bytes free from ts-header
-  putIntUnalignedBE(Data - 4, scanner);
+  save_scan = get_unaligned(((uint32_t *)(Data - 4)));
+  put_unaligned(scanner, ((uint32_t *)(Data - 4)));
+  scanner = get_unaligned(((uint32_t *)(limit - 4)));
 
   const uchar *data = Data - 1; // 1 of startcode may be in scanner
+
  // remember start of the data
-#endif
   const uchar *payload = Data;
   // remember start of handled data
   const uchar *data_save = Data;
@@ -960,12 +771,8 @@ void cVideoRepacker::Repack(uchar *Data, int Count, const bool PacketStart)
 #ifdef USE_HW_VIDEO_FRAME_EVENTS
            videoFrameSave != tsVideoFrameNone &&
 #endif
-#ifdef DISABLE_RINGBUFFER_IN_RECEIVER
-           (beginStartCode || ScanDataForStartCode(data, limit))) {
-         beginStartCode = false;
-#else
            ScanDataForStartCode(data, limit)) {
-#endif
+
         packetTodo -= data - data_save;
         //dsyslog("DEBUG: In with Events %d %d",videoFrameSave, videoFrame);
         if (state == syncing)
@@ -986,11 +793,8 @@ void cVideoRepacker::Repack(uchar *Data, int Count, const bool PacketStart)
 #endif
         }
 
-#ifndef DISABLE_RINGBUFFER_IN_RECEIVER
-  scanner = getIntUnalignedBE(limit - 4);
-#endif
-
   if (state == syncing) {
+     put_unaligned(save_scan, ((uint32_t *)(Data - 4)));
      skippedBytes += limit - data_save;
      return;
      }
@@ -1038,21 +842,10 @@ void cVideoRepacker::Repack(uchar *Data, int Count, const bool PacketStart)
              // This data is saved in scanner and put before start of this run,
              // so we need not copy anything in here.
 
-#ifdef DISABLE_RINGBUFFER_IN_RECEIVER
-     const uchar *excessData = fragmentData + fragmentLen + bite;
-#endif
 
      PushOutVideoPacket(payload, bite);
 
      CreatePesHeader(true);
-#ifdef DISABLE_RINGBUFFER_IN_RECEIVER
-     while (bite < 0) {
-           // append the excess data here
-           bite++;
-           packetTodo++;
-           fragmentData[fragmentLen++] = *excessData++;
-           }
-#endif
      payload = limit + packetTodo;
      packetTodo += maxPacketSize - fragmentLen;
      }
@@ -1065,6 +858,7 @@ void cVideoRepacker::Repack(uchar *Data, int Count, const bool PacketStart)
      memcpy(fragmentData + fragmentLen, payload, bite);
      fragmentLen += bite;
      }
+  put_unaligned(save_scan, ((uint32_t *)(Data - 4)));
 }
 
 

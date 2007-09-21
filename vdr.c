@@ -196,6 +196,15 @@ int main(int argc, char *argv[])
 
   setlocale(LC_ALL, "");
 
+// M7X0 BEGIN AK
+// Move it here to fix segfault for too early kill
+// Signal handlers:
+
+  if (signal(SIGHUP,  SignalHandler) == SIG_IGN) signal(SIGHUP,  SIG_IGN);
+  if (signal(SIGINT,  SignalHandler) == SIG_IGN) signal(SIGINT,  SIG_IGN);
+  if (signal(SIGTERM, SignalHandler) == SIG_IGN) signal(SIGTERM, SIG_IGN);
+  if (signal(SIGPIPE, SignalHandler) == SIG_IGN) signal(SIGPIPE, SIG_IGN);
+
   // Command line options:
 
 #define DEFAULTSVDRPPORT 2001
@@ -606,31 +615,9 @@ int main(int argc, char *argv[])
      EXIT(2);
 
   cFont::SetCode(I18nCharSets()[Setup.OSDLanguage]);
-
+  
   if(Setup.HotStandby)
     setIaMode(0);
-  
-  // Recordings:
-
-  Recordings.Update();
-  DeletedRecordings.Update();
-
-  // EPG data:
-
-  if (EpgDataFileName) {
-     const char *EpgDirectory = NULL;
-     if (DirectoryOk(EpgDataFileName)) {
-        EpgDirectory = EpgDataFileName;
-        EpgDataFileName = DEFAULTEPGDATAFILENAME;
-        }
-     else if (*EpgDataFileName != '/' && *EpgDataFileName != '.')
-        EpgDirectory = VideoDirectory;
-     if (EpgDirectory)
-        cSchedules::SetEpgDataFileName(AddDirectory(EpgDirectory, EpgDataFileName));
-     else
-        cSchedules::SetEpgDataFileName(EpgDataFileName);
-     cSchedules::Read();
-     }
 
   // DVB interfaces:
 
@@ -713,6 +700,25 @@ int main(int argc, char *argv[])
   if (AudioCommand)
      new cExternalAudio(AudioCommand);
 
+// M7X0 BEGIN AK
+// Move here
+// EPG data:
+
+  if (EpgDataFileName) {
+     const char *EpgDirectory = NULL;
+     if (DirectoryOk(EpgDataFileName)) {
+        EpgDirectory = EpgDataFileName;
+        EpgDataFileName = DEFAULTEPGDATAFILENAME;
+        }
+     else if (*EpgDataFileName != '/' && *EpgDataFileName != '.')
+        EpgDirectory = VideoDirectory;
+     if (EpgDirectory)
+        cSchedules::SetEpgDataFileName(AddDirectory(EpgDirectory, EpgDataFileName));
+     else
+        cSchedules::SetEpgDataFileName(EpgDataFileName);
+     cSchedules::Read();
+     }
+// M7X0 END AK
   // Channel:
 
   if (!cDevice::WaitForAllDevicesReady(DEVICEREADYTIMEOUT))
@@ -727,16 +733,17 @@ int main(int argc, char *argv[])
   else
      cDevice::PrimaryDevice()->SetVolume(Setup.CurrentVolume, true);
 
-  // Signal handlers:
+// M7X0 BEGIN AK
+// more here hopefully speed up start a bit
+ // Recordings:
 
-  if (signal(SIGHUP,  SignalHandler) == SIG_IGN) signal(SIGHUP,  SIG_IGN);
-  if (signal(SIGINT,  SignalHandler) == SIG_IGN) signal(SIGINT,  SIG_IGN);
-  if (signal(SIGTERM, SignalHandler) == SIG_IGN) signal(SIGTERM, SIG_IGN);
-  if (signal(SIGPIPE, SignalHandler) == SIG_IGN) signal(SIGPIPE, SIG_IGN);
-  if (WatchdogTimeout > 0)
-     if (signal(SIGALRM, Watchdog)   == SIG_IGN) signal(SIGALRM, SIG_IGN);
+  Recordings.Update();
+  DeletedRecordings.Update();
 
   // Watchdog:
+  if (WatchdogTimeout > 0)
+     if (signal(SIGALRM, Watchdog)   == SIG_IGN) signal(SIGALRM, SIG_IGN);
+// M7X0 END AK
 
   if (WatchdogTimeout > 0) {
      dsyslog("setting watchdog timer to %d seconds", WatchdogTimeout);
@@ -761,7 +768,7 @@ int main(int argc, char *argv[])
         // Make sure we have a visible programme in case device usage has changed:
         if (!EITScanner.Active() && cDevice::PrimaryDevice()->HasDecoder() && !cDevice::PrimaryDevice()->HasProgramme()) {
            static time_t lastTime = 0;
-           if (!scanning_on_receiving_device && time(NULL) - lastTime > MINCHANNELWAIT) {
+           if (time(NULL) - lastTime > MINCHANNELWAIT) {
               cChannel *Channel = Channels.GetByNumber(cDevice::CurrentChannel());
               if (Channel && (Channel->Vpid() || Channel->Apid(0))) {
                  if (!Channels.SwitchTo(cDevice::CurrentChannel()) // try to switch to the original channel...

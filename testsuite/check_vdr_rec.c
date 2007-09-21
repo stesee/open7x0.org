@@ -1140,7 +1140,7 @@ void printUsage(void)
 int main(int argc, char **argv)
 {
   int i = 1;
-  if (argc >= 1 && !strcmp(argv[1],"-a")) {
+  if (argc > 1 && !strcmp(argv[1],"-a")) {
      check_alignment_flag = 1;
      i++;
      }

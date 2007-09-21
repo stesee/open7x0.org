@@ -582,6 +582,8 @@ cRecording::cRecording(const char *FileName)
      char *InfoFileName = NULL;
      asprintf(&InfoFileName, "%s%s", fileName, INFOFILESUFFIX);
      FILE *f = fopen(InfoFileName, "r");
+     while (!f && !FATALERRNO)
+           f = fopen(InfoFileName, "r");
      if (f) {
         if (!info->Read(f))
            esyslog("ERROR: EPG data problem in file %s", InfoFileName);
@@ -596,6 +598,8 @@ cRecording::cRecording(const char *FileName)
         char *SummaryFileName = NULL;
         asprintf(&SummaryFileName, "%s%s", fileName, SUMMARYFILESUFFIX);
         FILE *f = fopen(SummaryFileName, "r");
+        while (!f && !FATALERRNO)
+              f = fopen(SummaryFileName, "r");
         if (f) {
            int line = 0;
            char *data[3] = { NULL };
@@ -872,7 +876,10 @@ cRecordings::~cRecordings()
 
 void cRecordings::Action(void)
 {
+//M7X0 BEGIN AK
+  SetPriority(10);
   Refresh();
+//M7X0 END AK
 }
 
 const char *cRecordings::UpdateFileName(void)

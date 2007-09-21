@@ -61,7 +61,6 @@ void syslog_with_tid(int priority, const char *format, ...)
 }
 #endif
 //M7X0 END AK
-
 int BCD2INT(int x)
 {
   return ((1000000 * BCDCHARTOINT((x >> 24) & 0xFF)) +
@@ -857,7 +856,12 @@ cReadLine::~cReadLine()
 
 char *cReadLine::Read(FILE *f)
 {
+  errno = 0;
   int n = getline(&buffer, &size, f);
+  while (n < 0 && errno && !FATALERRNO) {
+        errno = 0;
+        n = getline(&buffer, &size, f);
+        }
   if (n > 0) {
      n--;
      if (buffer[n] == '\n') {
@@ -932,7 +936,13 @@ void cReadDir::Close(void)
 //M7X0 END AK
 struct dirent *cReadDir::Next(void)
 {
-  return directory && readdir_r(directory, &u.d, &result) == 0 ? result : NULL;
+  errno = 0;
+  int r;
+  while (directory && (r = readdir_r(directory, &u.d, &result)) && errno &&
+    !FATALERRNO) {
+        errno = 0;
+        }
+  return directory && r == 0 ? result : NULL;
 }
 
 
