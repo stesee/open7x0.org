@@ -4293,8 +4293,8 @@ bool cDvbDevice::SetChannelDevice(const cChannel *Channel, bool LiveView)
 
   // Wait for tuner lock:
   // This seems to be need sometimes on M7x0
-//  if (!HasLock(-1))
-//      esyslog("ERROR: Cannot get Tuner-Lock!");
+  if (!HasLock(-1))
+      esyslog("ERROR: Cannot get Tuner-Lock!");
   // PID settings:
 
   if (TurnOnLivePIDs) {
