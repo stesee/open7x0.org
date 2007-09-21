@@ -3248,6 +3248,7 @@ private:
   int maxFill;
   int cardIndex;
   int f;
+  bool ok;
 
 #ifdef USE_HW_VIDEO_FRAME_EVENTS
   // Frame Event
