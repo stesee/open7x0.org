@@ -309,6 +309,7 @@ int main(int argc, char *argv[])
                 	break;
 		      }else{
 		        setIaMode(1);
+			break;
 			} 
 		    }
           case 'l': {
