@@ -2340,8 +2340,8 @@ cMenuSetupDVB::cMenuSetupDVB(void)
 //M7X0 BEGIN GA
 
   //m7x0 auto aspect
-  videoFormatTexts[0] = tr("4:3");
-  videoFormatTexts[1] = tr("16:9");
+  videoFormatTexts[0] = "4:3";
+  videoFormatTexts[1] = "16:9";
   videoFormatTexts[2] = tr("auto");
 
   updateChannelsTexts[0] = tr("no");
@@ -2363,7 +2363,7 @@ void cMenuSetupDVB::Setup(void)
 
   Add(new cMenuEditIntItem( tr("Setup.DVB$Primary DVB interface"), &data.PrimaryDVB, 1, cDevice::NumDevices()));
   //m7x0 HotStandby
-  Add(new cMenuEditBoolItem(tr("Setup.DVB$Hot Standby"),	   &data.HotStandby, "off", "on"));
+  Add(new cMenuEditBoolItem(tr("Setup.DVB$Hot Standby"),	   &data.HotStandby, tr("no"), tr("yes")));
   //m7x0 TvMode fbas svideo
   Add(new cMenuEditBoolItem(tr("Setup.DVB$TV mode"),		   &data.TvMode, "fbas", "svideo"));
   //m7x0 VCRMode fbas svideo

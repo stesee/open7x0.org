@@ -2300,7 +2300,7 @@ const tI18nPhrase Phrases[] = {
     "",//TODO
     "VPS-tallennus on alkamassa!",
     "Wkrótce nagranie VPS!",
-    "",//TODO
+    "¡Grabación VPS pendiente!",
     "",//TODO
     "strax VPS inspelning...",
     "Urmeazã o înregistrare VPS!",
@@ -2520,7 +2520,7 @@ const tI18nPhrase Phrases[] = {
     "",//TODO
     "Tallennustilan puute estää tallennuksen!",
     "Brak miejsca na dysku do nagrywania!",
-    "",//TODO
+    "¡No hay suficiente espacio para grabar!",
     "",//TODO
     "Otillräcklingt diskutrymme för inspelning!",
     "Insuficient spaþiul pe disc pentru înregistrare!",
@@ -3754,7 +3754,7 @@ const tI18nPhrase Phrases[] = {
     "",// TODO
     "vain PID:it",
     "tylko PID-y",
-    "",// TODO
+    "Sólo PIDs",
     "",// TODO
     "bara PIDs",
     "Numai PID-uri",
@@ -4480,7 +4480,7 @@ const tI18nPhrase Phrases[] = {
     "",// TODO
     "Kanava käynnistettäessä",
     "Pocz±tkowy kana³",
-    "",// TODO
+    "Canal inicial",
     "",// TODO
     "Kanal vid uppstart",
     "Canalul de pornire",
@@ -4502,7 +4502,7 @@ const tI18nPhrase Phrases[] = {
     "",// TODO
     "Äänenvoimakkuus käynnistettäessä",
     "Pocz±tkowa g³o¶no¶æ",
-    "",// TODO
+    "Volumen inicial",
     "",// TODO
     "Ljudstyrka vid uppstart",
     "Volumul la pornire",
@@ -4524,7 +4524,7 @@ const tI18nPhrase Phrases[] = {
     "",// TODO
     "edellinen",
     "jak ostatnio",
-    "",// TODO
+    "como antes",
     "",// TODO
     "som förut",
     "ca mai înainte",
@@ -5343,7 +5343,7 @@ const tI18nPhrase Phrases[] = {
     "",// TODO
     "Seuraava",
     "Dalej",
-    "",// TODO
+    "Siguiente",
     "",// TODO
     "Nästa",
     "Urmãtor",
@@ -5453,7 +5453,7 @@ const tI18nPhrase Phrases[] = {
     "",// TODO
     "Edellinen kanava",
     "Poprzedni kana³",
-    "",// TODO
+    "Canal anterior",
     "",// TODO
     "Förra kanalen",
     "Canal anterior",
@@ -6125,6 +6125,72 @@ const tI18nPhrase Phrases[] = {
     "Pealkiri puudub",
     "Ingen titel",
     "Bez názvu",
+  },
+  { "Setup.DVB$Hot Standby",
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "Apagado rápido",
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+  },
+  { "Setup.DVB$TV mode",
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "Modo TV",
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+  },
+  { "Setup.DVB$VCR mode",
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "Modo VCR",
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
+    "",// TODO
   },
   { NULL }
   };

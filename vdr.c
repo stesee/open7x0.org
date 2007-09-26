@@ -1114,6 +1114,7 @@ int main(int argc, char *argv[])
 	       if(Setup.HotStandby){
 	         setIaMode(0);
 		 cDevice::PrimaryDevice()->SetTvSettings(0);
+		 cControl::Shutdown();
 		 break;
 		 }
                if (!Shutdown) {
