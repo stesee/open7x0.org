@@ -1221,7 +1221,7 @@ off_t cUnbufferedFile::Seek(off_t Offset, int Whence)
         }
 #ifdef CHECK_DIRECT_IO_BUFFERS
      if (Offset & (blockSize -1)) {
-        esyslog("ERROR: Seek offset 0x%X not aligned to fs block size 0x%X "
+        esyslog("ERROR: Seek offset 0x%lX not aligned to fs block size 0x%X "
                 "while using direct io. Falling back ... !",Offset, blockSize);
 
         int r = FallBackFromDirectIO();
@@ -1235,7 +1235,7 @@ off_t cUnbufferedFile::Seek(off_t Offset, int Whence)
      curpos = lseek(fd, Offset, Whence);
 
      if (curpos < 0) {
-        esyslog("ERROR: Cannot seek to offset 0x%X fs block size 0x%X "
+        esyslog("ERROR: Cannot seek to offset 0x%lX fs block size 0x%X "
                 "while using direct io. Falling back ... !",Offset, blockSize);
 
         int r = FallBackFromDirectIO();

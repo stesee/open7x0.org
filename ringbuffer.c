@@ -800,7 +800,20 @@ uchar *cRingBufferResult::Get(int &Count, sPesResult *&Headers, int &HeaderCount
   int i = FirstHeader;
   int count = 0;
   const int end = Tail + RESULT_BUFFER_ALIGNMENT;
+  sPesResult *headers = pesHeadersGotten;
   while (i != LastHeader && pesHeader[i].offset >= Tail && pesHeader[i].offset < end) {
+        if (pesHeadersGottenSize <= count) {
+           headers = (sPesResult *) realloc(headers, sizeof(sPesResult) * (count + 16));
+           if (!headers) {
+              esyslog("ERROR Cannot alloc get headers");
+              gotten = 0;
+              return NULL;
+              }
+           pesHeadersGottenSize = count + 16;
+           pesHeadersGotten = headers;
+           }
+        memcpy(&headers[count], &pesHeader[i], sizeof(sPesResult));
+        headers[count].offset -= Tail;
         count++;
         i++;
         if (i == headersSize)
@@ -810,31 +823,7 @@ uchar *cRingBufferResult::Get(int &Count, sPesResult *&Headers, int &HeaderCount
 
   headersGotten = count;
   HeaderCount = count;
-  sPesResult *headers = pesHeadersGotten;
-  if (count) {
-     if (pesHeadersGottenSize < count) {
-        headers = (sPesResult *) realloc(pesHeadersGotten, sizeof(sPesResult) * count);
-        if (!headers) {
-           esyslog("ERROR Cannot alloc get headers");
-           gotten = 0;
-           return NULL;
-           }
-        pesHeadersGottenSize = count;
-        pesHeadersGotten = headers;
-        }
-
-     Headers = headers;
-     int restHeaders = headersSize - FirstHeader;
-     if (restHeaders < count) {
-        memcpy(headers, &pesHeader[FirstHeader], sizeof(sPesResult) * restHeaders);
-        memcpy(&headers[restHeaders], pesHeader, sizeof(sPesResult) * (count - restHeaders));
-        }
-     else {
-        memcpy(headers, &pesHeader[FirstHeader], sizeof(sPesResult) * count);
-        }
-     }
-  for (i = 0; i < count; i++)
-      headers[i].offset -= Tail;
+  Headers = headers;
 
   return p;
 }

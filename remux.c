@@ -747,9 +747,9 @@ void cVideoRepacker::Repack(uchar *Data, int Count, const bool PacketStart)
   const uchar *const limit = Data + Count;
   uint32_t save_scan;
   // Store scanner at Data -4, we have always 4 bytes free from ts-header
-  save_scan = get_unaligned(((uint32_t *)(Data - 4)));
-  put_unaligned(scanner, ((uint32_t *)(Data - 4)));
-  scanner = get_unaligned(((uint32_t *)(limit - 4)));
+  save_scan = get_unaligned((uint32_t *)(Data - 4));
+  put_unaligned(scanner, (uint32_t *)(Data - 4));
+  scanner = get_unaligned((uint32_t *)(limit - 4));
 
   const uchar *data = Data - 1; // 1 of startcode may be in scanner
 
@@ -1380,32 +1380,6 @@ const int cDolbyRepacker::frameSizes[] = {
      0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0
   };
 
-#if 0
-// frameSizes are in words, i. e. multiply them by 2 to get bytes
-int cDolbyRepacker::frameSizes[] = {
-  // fs = 48 kHz
-    64,   64,   80,   80,   96,   96,  112,  112,  128,  128,  160,  160,  192,  192,  224,  224,
-   256,  256,  320,  320,  384,  384,  448,  448,  512,  512,  640,  640,  768,  768,  896,  896,
-  1024, 1024, 1152, 1152, 1280, 1280,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,
-     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,
-  // fs = 44.1 kHz
-    69,   70,   87,   88,  104,  105,  121,  122,  139,  140,  174,  175,  208,  209,  243,  244,
-   278,  279,  348,  349,  417,  418,  487,  488,  557,  558,  696,  697,  835,  836,  975,  976,
-  1114, 1115, 1253, 1254, 1393, 1394,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,
-     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,
-  // fs = 32 kHz
-    96,   96,  120,  120,  144,  144,  168,  168,  192,  192,  240,  240,  288,  288,  336,  336,
-   384,  384,  480,  480,  576,  576,  672,  672,  768,  768,  960,  960, 1152, 1152, 1344, 1344,
-  1536, 1536, 1728, 1728, 1920, 1920,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,
-     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,
-  //
-     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,
-     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,
-     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,
-     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,
-  };
-#endif
-
 
 cDolbyRepacker::cDolbyRepacker(int Pid, cRingBufferResult *ResultBuffer, int MaxPacketSize, uint8_t StreamId, uint8_t SubStreamId)
 : cRepacker(Pid, ResultBuffer, MaxPacketSize, StreamId, SubStreamId)
@@ -1428,7 +1402,7 @@ bool cDolbyRepacker::ScanDataForStartCode(const uchar *&Data, const uchar *const
 {
   register const uchar *data = Data;
   if (!skippedBytes && Limit - data >= 5) {
-        scanner = getIntUnaligned(data);
+        scanner = BE2HOST(get_unaligned((uint32_t *)data));
         data += 4;
         if ((scanner & 0xFFFF0000) == 0x0B770000 && (frameSize = frameSizes[*data])) {
            skippedBytes = 4;
@@ -1490,7 +1464,6 @@ void cDolbyRepacker::Repack(uchar *Data, int Count, const bool PacketStart)
            if (frameTodo && packetTodo) {
               // All remaining data contains to current frame
               // And frame is not fully present
-              // bite = data - payload;
               memcpy(fragmentData + fragmentLen, data, bite);
               fragmentLen += bite;
               return;
@@ -1521,7 +1494,7 @@ void cDolbyRepacker::Repack(uchar *Data, int Count, const bool PacketStart)
 
         CreatePesHeader(false, inputPesHeaderBackupLen && inputPacketDone - inputPesHeaderBackupLen - (data - Data) >= 4 );
         AppendSubStreamHeader(false);
-        putIntUnalignedBE(fragmentData + fragmentLen, scanner);
+        put_unaligned(HOST2BE(scanner), (uint32_t *)(fragmentData + fragmentLen));
         fragmentLen += 4;
         packetTodo = maxPacketSize - fragmentLen;
         frameTodo = frameSize - 4;
@@ -1536,7 +1509,7 @@ void cDolbyRepacker::Repack(uchar *Data, int Count, const bool PacketStart)
 
 // --- cRemux ----------------------------------------------------------------
 #ifdef DISABLE_RINGBUFFER_IN_RECEIVER
-#define RESULTBUFFERSIZE MEGABYTE(5) //(256)
+#define RESULTBUFFERSIZE MEGABYTE(3) //(256)
 #else
 #define RESULTBUFFERSIZE KILOBYTE(768) //(256)
 #endif

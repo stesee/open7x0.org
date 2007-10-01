@@ -48,27 +48,7 @@ void setIaMode(bool mode);
 #define getIntUnalignedBE getIntUnaligned
 #define putIntUnaligned(a,b) put_unaligned((int32_t) (b), (int32_t *)(a))
 #define getIntUnaligned(a) get_unaligned((int32_t *) (a))
-/*inline void putIntUnaligned(uchar *const p, int32_t i)
-{
-  asm ("usw %[i],%[m]\n\t"
-       : [m] "=m" (* ((int32_t *const) p))
-       : [i] "r" (i) );
-}
 
-inline int32_t getIntUnaligned(const uchar *const p) {
-  int32_t ret;
-  asm ("ulw %[ret],%[m]\n\t"
-       : [ret] "=&r" (ret)
-       : [m] "m" (*p));
-  return ret;
-}*/
-#if 0
-// m7x0 does not support syslog correct yet
-//M7X0TODO: Get syslog working ;)
-#define esyslog(a...) void( (SysLogLevel > 0) ? void(fprintf(stderr,a)), void(fprintf(stderr,"\n")), void(fflush(stderr)) : void() )
-#define isyslog(a...) void( (SysLogLevel > 1) ? void(fprintf(stderr,a)), void(fprintf(stderr,"\n")), void(fflush(stderr)) : void() )
-#define dsyslog(a...) void( (SysLogLevel > 2) ? void(fprintf(stderr,a)), void(fprintf(stderr,"\n")), void(fflush(stderr)) : void() )
-#endif
 // Syslog reactivated
 #define esyslog(a...) void( (SysLogLevel > 0) ? syslog_with_tid(LOG_ERR,   a) : void() )
 #define isyslog(a...) void( (SysLogLevel > 1) ? syslog_with_tid(LOG_INFO,  a) : void() )
@@ -108,7 +88,7 @@ inline int32_t getIntUnaligned(const uchar *const p) {
 #define FATALERRNO (errno && errno != EAGAIN && errno != EINTR && errno != EBUSY)
 // Getting EBUSY in many cases on m7x0 where this should not break things.
 
-template<class T> inline T swapBytes(T a) {
+template<class T> inline T swapBytes(const T a) {
   switch(sizeof(T)) {
     case 8: return bswap_64(a);
     case 4: return bswap_32(a);
@@ -119,9 +99,9 @@ template<class T> inline T swapBytes(T a) {
 
 
 #ifndef __STL_CONFIG_H // in case some plugin needs to use the STL
-template<class T> inline T min(T a, T b) { return a <= b ? a : b; }
-template<class T> inline T max(T a, T b) { return a >= b ? a : b; }
-template<class T> inline int sgn(T a) { return a < 0 ? -1 : a > 0 ? 1 : 0; }
+template<class T> inline T min(const T a, const T b) { return a <= b ? a : b; }
+template<class T> inline T max(const T a, const T b) { return a >= b ? a : b; }
+template<class T> inline int sgn(const T a) { return a < 0 ? -1 : a > 0 ? 1 : 0; }
 template<class T> inline void swap(T &a, T &b) { T t = a; a = b; b = t; }
 #endif
 
@@ -136,16 +116,16 @@ int BCD2INT(int x);
 // Unfortunately there are no platform independent macros for unaligned
 // access. so we do it this way:
 
-template<class T> inline T get_unaligned(T *p)
+template<class T> inline T get_unaligned(const T *const p)
 {
   struct s { T v; } __attribute__((packed));
   return ((s *)p)->v;
 }
 
-template<class T> inline void put_unaligned(/*unsigned int*/ T v, T* p)
+template<class T> inline void put_unaligned(/*unsigned int*/ const T i, T *const p)
 {
   struct s { T v; } __attribute__((packed));
-  ((s *)p)->v = v;
+  ((s *)p)->v = i;
 }
 
 class cString {

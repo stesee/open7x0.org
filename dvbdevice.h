@@ -72,11 +72,11 @@ public:
 
 private:
   cDvbTuner *dvbTuner;
-  void TurnOffLiveMode(bool LiveView);
+//M7X0 BEGIN AK
+  void TurnOffLiveMode(bool LiveView,  bool DoBlank = false);
 public:
   virtual bool ProvidesSource(int Source) const;
   virtual bool ProvidesTransponder(const cChannel *Channel) const;
-//M7X0 BEGIN AK
   virtual bool ProvidesChannel(const cChannel *Channel, int Priority = -1, bool *NeedsDetachReceivers = NULL, bool forTransferer = false) const;
 //M7X0 END AK
   virtual bool IsTunedToTransponder(const cChannel *Channel);

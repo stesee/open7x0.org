@@ -3513,7 +3513,7 @@ uchar *c7x0TSBuffer::Get(int &Length,int &Pid)
   // Checks for same PID and TS_SYNC_BYTE
   uchar *p = dvrRingBuffer + bufferState.offset;
 
-  int pid = getIntUnaligned(p)&0xff1fff00;
+  uint32_t pid = getIntUnaligned(p)&0xff1fff00;
   int l;
 #ifdef USE_HW_VIDEO_FRAME_EVENTS
   const int maxreadable = curEventAvail? min(curEventOffset - 1, bufferState.readable - TS_SIZE): bufferState.readable - TS_SIZE;
@@ -3522,7 +3522,7 @@ uchar *c7x0TSBuffer::Get(int &Length,int &Pid)
 #endif
 
   for (l = TS_SIZE ; l <= maxreadable &&
-        (getIntUnaligned(p+l)&0xff1fff00) == pid; l += TS_SIZE)
+        (get_unaligned((uint32_t *)(p+l))&0xff1fff00) == pid; l += TS_SIZE)
       ;
 
   bufferState.offset += l;
@@ -4157,7 +4157,7 @@ int cDvbDevice::OpenFilter(u_short Pid, u_char Tid, u_char Mask)
   return -1;
 }
 
-void cDvbDevice::TurnOffLiveMode(bool LiveView)
+void cDvbDevice::TurnOffLiveMode(bool LiveView, bool DoBlank)
 {
 //M7X0 BEGIN AK
 
@@ -4170,10 +4170,12 @@ void cDvbDevice::TurnOffLiveMode(bool LiveView)
   DetachAll(pidHandles[ptTeletext].pid);
 #endif
 
-  if (LiveView || pidHandles[ptAudio].pid || pidHandles[ptVideo].pid) {
+  if (LiveView) {
      // Avoid noise while switching:
      CHECK(ioctl(fd_audio, AUDIO_STOP, 0));
      CHECK(ioctl(fd_video, VIDEO_STOP, 1));
+     }
+  if (DoBlank) {
   /* This more than ugly but driver is more than ugly as bad.
    * If switched to a radio channel, driver does not blank screen.
    * Last frame is shown until another video-channel is selected.
@@ -4253,7 +4255,6 @@ bool cDvbDevice::IsTunedToTransponder(const cChannel *Channel)
 }
 
 //M7X0 BEGIN AK
-// Wie do not need a
 bool cDvbDevice::SetChannelDevice(const cChannel *Channel, bool LiveView)
 {
   bool DoTune = !dvbTuner->IsTunedTo(Channel);
@@ -4267,9 +4268,12 @@ bool cDvbDevice::SetChannelDevice(const cChannel *Channel, bool LiveView)
 
   bool TurnOnLivePIDs = HasDecoder() && LiveView;
 
+  bool DoBlank = LiveView && !pidHandles[ptVideo].pid && Channel->Vpid() ||
+                 pidHandles[ptVideo].pid && (!LiveView || !Channel->Vpid());
+
+
 #ifndef DO_MULTIPLE_RECORDINGS
   TurnOffLivePIDs = TurnOnLivePIDs = true;
-  StartTransferMode = false;
 #endif
 
   // Turn off live PIDs if necessary:
@@ -4277,7 +4281,7 @@ bool cDvbDevice::SetChannelDevice(const cChannel *Channel, bool LiveView)
   if (TurnOffLivePIDs) {
      if (TurnOnLivePIDs)
         CHECK(ioctl(fd_audio, AUDIO_SET_MUTE, true));
-     TurnOffLiveMode(LiveView);
+     TurnOffLiveMode(LiveView, DoBlank);
      }
 
   // Set the tuner:
@@ -4291,14 +4295,13 @@ bool cDvbDevice::SetChannelDevice(const cChannel *Channel, bool LiveView)
   if (EITScanner.UsesDevice(this)) //XXX
      return true;
 
-  // Wait for tuner lock:
-  // This seems to be need sometimes on M7x0
-//  if (!HasLock(-1))
-//      esyslog("ERROR: Cannot get Tuner-Lock!");
   // PID settings:
 
   if (TurnOnLivePIDs) {
-
+     // Wait for tuner lock:
+     // This seems to be need sometimes on M7x0
+     if (!HasLock(-1))
+        esyslog("ERROR: Cannot get Tuner-Lock!");
      SetAudioBypass(false);
      if (!(AddPid(Channel->Ppid(), ptPcr) && AddPid(Channel->Vpid(), ptVideo) && AddPid(Channel->Apid(0), ptAudio))) {
         esyslog("ERROR: failed to set PIDs for channel %d on device %d", Channel->Number(), CardIndex() + 1);
@@ -4463,7 +4466,7 @@ bool cDvbDevice::SetPlayMode(ePlayMode PlayMode)
      fd_audio = DvbOpen(DEV_DVB_ADAPTER DEV_DVB_AUDIO,  CardIndex(), O_RDWR | O_NONBLOCK);
      SetVideoFormat(eVideoFormat(Setup.VideoFormat));
      }
-
+  bool DoBlank = false;
   switch (PlayMode) {
     case pmNone:
          CHECK(ioctl(fd_audio, AUDIO_STOP, 0));
@@ -4479,14 +4482,14 @@ bool cDvbDevice::SetPlayMode(ePlayMode PlayMode)
          break;
     case pmAudioVideo:
     case pmAudioOnlyBlack:
-    case pmAudioOnly:
-    case pmVideoOnly:
          if (tsreplayer != NULL) {
             delete tsreplayer;
             tsreplayer=NULL;
          }
-         //if (playMode == pmNone)
-         TurnOffLiveMode(true);
+         DoBlank = !replayer &&
+           (!pidHandles[cDevice::ptVideo].pid && PlayMode == pmAudioVideo ||
+            pidHandles[cDevice::ptVideo].pid && PlayMode != pmAudioVideo);
+         TurnOffLiveMode(true, DoBlank);
          CHECK(ioctl(fd_audio, AUDIO_STOP,0));
          CHECK(ioctl(fd_video, VIDEO_STOP, 1));
          if (replayer == NULL){
@@ -4495,17 +4498,45 @@ bool cDvbDevice::SetPlayMode(ePlayMode PlayMode)
          else
             replayer->Reset();
          break;
+    case pmAudioOnly:
+    case pmVideoOnly:
+         if (tsreplayer != NULL) {
+            delete tsreplayer;
+            tsreplayer=NULL;
+         }
 
+         CHECK(ioctl(fd_audio, AUDIO_STOP,0));
+         CHECK(ioctl(fd_video, VIDEO_STOP, 1));
+         if (replayer == NULL){
+            replayer = new c7x0Replayer(this);
+            }
+         else
+            replayer->Reset();
+         break;
     case pmTsAudioVideo:
     case pmTsAudioOnlyBlack:
+         if (replayer != NULL) {
+            delete replayer;
+            replayer=NULL;
+         }
+         DoBlank = !tsreplayer &&
+           (!pidHandles[cDevice::ptVideo].pid && PlayMode == pmTsAudioVideo ||
+            pidHandles[cDevice::ptVideo].pid && PlayMode != pmTsAudioVideo);
+         TurnOffLiveMode(true, DoBlank);
+         CHECK(ioctl(fd_audio, AUDIO_STOP,0));
+         CHECK(ioctl(fd_video, VIDEO_STOP, 1));
+         if (tsreplayer == NULL){
+            tsreplayer = new c7x0TsReplayer(this);
+            }
+         else
+            tsreplayer->Reset();
+         break;
     case pmTsAudioOnly:
     case pmTsVideoOnly:
          if (replayer != NULL) {
             delete replayer;
             replayer=NULL;
          }
-         //if (playMode == pmNone)
-         TurnOffLiveMode(true);
          CHECK(ioctl(fd_audio, AUDIO_STOP,0));
          CHECK(ioctl(fd_video, VIDEO_STOP, 1));
          if (tsreplayer == NULL){
@@ -4519,8 +4550,10 @@ bool cDvbDevice::SetPlayMode(ePlayMode PlayMode)
          break;
 
     case pmTransferer:
+         TurnOffLiveMode(true,!pidHandles[cDevice::ptVideo].pid);
+         break;
     case pmTransfererAudioOnly:
-         TurnOffLiveMode(true);
+         TurnOffLiveMode(true,pidHandles[cDevice::ptVideo].pid);
          break;
     }
   playMode = PlayMode;
