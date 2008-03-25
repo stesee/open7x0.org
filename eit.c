@@ -13,6 +13,9 @@
 
 #include "eit.h"
 #include "epg.h"
+//M7X0 BEGIN AK
+#include "epgmode.h"
+//M7X0 END AK
 #include "i18n.h"
 #include "libsi/section.h"
 #include "libsi/descriptor.h"
@@ -31,6 +34,12 @@ cEIT::cEIT(cSchedules *Schedules, int Source, u_char Tid, const u_char *Data, bo
      return;
 
   tChannelID channelID(Source, getOriginalNetworkId(), getTransportStreamId(), getServiceId());
+//M7X0 BEGIN AK
+  eEpgMode em = EpgModes.GetModeByChannelID(&channelID)->GetMode();
+  if (em == emNone || em == emForeign ||
+        (em == emNowNext && Tid != 0x4e && Tid != 0x4f))
+     return;
+//M7X0 END AK
   cChannel *channel = Channels.GetByChannelID(channelID, true);
   if (!channel)
      return; // only collect data for known channels
@@ -300,7 +309,7 @@ cTDT::cTDT(const u_char *Data)
         isyslog("Local Time  = %s (%ld)", *TimeToString(sattim), sattim);
         if (stime(&sattim) < 0){
 				char __errorstr[256];
-				strerror_r(errno,__errorstr,256); 
+				strerror_r(errno,__errorstr,256);
 				__errorstr[255]=0;
            esyslog("ERROR while setting system time: %s",__errorstr);
 			  }
@@ -315,7 +324,7 @@ cTDT::cTDT(const u_char *Data)
 cEitFilter::cEitFilter(void)
 {
 //M7X0 BEGIN AK
-// m7x0 can only handle one filter per pid 
+// m7x0 can only handle one filter per pid
 // Lets only filter 0x40-0x5f m7x0 seems not to like too many filters
 // Is 0x6x really used? (hopefully not)
   Set(0x12, 0x40, 0xE0);   // event info, actual(0x4E)/other(0x4F) TS, present/following

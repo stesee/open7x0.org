@@ -85,6 +85,7 @@
 #include "videodir.h"
 //M7X0 BEGIN AK
 #include "builddate.h"
+#include "epgmode.h"
 //M7X0 END AK
 
 #define MINCHANNELWAIT     10 // seconds to wait between failed channel switchings
@@ -195,15 +196,6 @@ int main(int argc, char *argv[])
   // Initiate locale:
 
   setlocale(LC_ALL, "");
-
-// M7X0 BEGIN AK
-// Move it here to fix segfault for too early kill
-// Signal handlers:
-
-  if (signal(SIGHUP,  SignalHandler) == SIG_IGN) signal(SIGHUP,  SIG_IGN);
-  if (signal(SIGINT,  SignalHandler) == SIG_IGN) signal(SIGINT,  SIG_IGN);
-  if (signal(SIGTERM, SignalHandler) == SIG_IGN) signal(SIGTERM, SIG_IGN);
-  if (signal(SIGPIPE, SignalHandler) == SIG_IGN) signal(SIGPIPE, SIG_IGN);
 
   // Command line options:
 
@@ -620,6 +612,25 @@ int main(int argc, char *argv[])
   if(Setup.HotStandby)
     setIaMode(0);
 
+  // EPG data:
+//M7X0 BEGIN AK
+  EpgModes.Load(AddDirectory(ConfigDirectory, "epgmodes.conf"));
+//M7X0 END AK
+  if (EpgDataFileName) {
+     const char *EpgDirectory = NULL;
+     if (DirectoryOk(EpgDataFileName)) {
+        EpgDirectory = EpgDataFileName;
+        EpgDataFileName = DEFAULTEPGDATAFILENAME;
+        }
+     else if (*EpgDataFileName != '/' && *EpgDataFileName != '.')
+        EpgDirectory = VideoDirectory;
+     if (EpgDirectory)
+        cSchedules::SetEpgDataFileName(AddDirectory(EpgDirectory, EpgDataFileName));
+     else
+        cSchedules::SetEpgDataFileName(EpgDataFileName);
+     cSchedules::Read();
+     }
+
   // DVB interfaces:
 
   cDvbDevice::Initialize();
@@ -701,25 +712,6 @@ int main(int argc, char *argv[])
   if (AudioCommand)
      new cExternalAudio(AudioCommand);
 
-// M7X0 BEGIN AK
-// Move here
-// EPG data:
-
-  if (EpgDataFileName) {
-     const char *EpgDirectory = NULL;
-     if (DirectoryOk(EpgDataFileName)) {
-        EpgDirectory = EpgDataFileName;
-        EpgDataFileName = DEFAULTEPGDATAFILENAME;
-        }
-     else if (*EpgDataFileName != '/' && *EpgDataFileName != '.')
-        EpgDirectory = VideoDirectory;
-     if (EpgDirectory)
-        cSchedules::SetEpgDataFileName(AddDirectory(EpgDirectory, EpgDataFileName));
-     else
-        cSchedules::SetEpgDataFileName(EpgDataFileName);
-     cSchedules::Read();
-     }
-// M7X0 END AK
   // Channel:
 
   if (!cDevice::WaitForAllDevicesReady(DEVICEREADYTIMEOUT))
@@ -734,17 +726,23 @@ int main(int argc, char *argv[])
   else
      cDevice::PrimaryDevice()->SetVolume(Setup.CurrentVolume, true);
 
+  // Signal handlers:
+
+  if (signal(SIGHUP,  SignalHandler) == SIG_IGN) signal(SIGHUP,  SIG_IGN);
+  if (signal(SIGINT,  SignalHandler) == SIG_IGN) signal(SIGINT,  SIG_IGN);
+  if (signal(SIGTERM, SignalHandler) == SIG_IGN) signal(SIGTERM, SIG_IGN);
+  if (signal(SIGPIPE, SignalHandler) == SIG_IGN) signal(SIGPIPE, SIG_IGN);
+  if (WatchdogTimeout > 0)
+     if (signal(SIGALRM, Watchdog)   == SIG_IGN) signal(SIGALRM, SIG_IGN);
+
 // M7X0 BEGIN AK
 // more here hopefully speed up start a bit
  // Recordings:
-
   Recordings.Update();
   DeletedRecordings.Update();
+// M7X0 END AK
 
   // Watchdog:
-  if (WatchdogTimeout > 0)
-     if (signal(SIGALRM, Watchdog)   == SIG_IGN) signal(SIGALRM, SIG_IGN);
-// M7X0 END AK
 
   if (WatchdogTimeout > 0) {
      dsyslog("setting watchdog timer to %d seconds", WatchdogTimeout);
@@ -1367,6 +1365,15 @@ int main(int argc, char *argv[])
      isyslog("caught signal %d", Interrupted);
 
 Exit:
+
+//M7X0 BEGIN AK
+  // Reset all signal handlers to default before Interface gets deleted:
+  signal(SIGHUP,  SIG_DFL);
+  signal(SIGINT,  SIG_DFL);
+  signal(SIGTERM, SIG_DFL);
+  signal(SIGPIPE, SIG_DFL);
+  signal(SIGALRM, SIG_DFL);
+//M7X0 END AK
 
   PluginManager.StopPlugins();
   cRecordControls::Shutdown();

@@ -26,7 +26,7 @@ LIBS     = -ljpeg
 endif
 
 LIBS     += -lpthread -ldl # -lcap
-INCLUDES = 
+INCLUDES =
 
 PLUGINDIR= ./PLUGINS
 PLUGINLIBDIR= $(PLUGINDIR)/lib
@@ -41,7 +41,7 @@ DOXYFILE = Doxyfile
 SILIB    = $(LSIDIR)/libsi.a
 
 OBJS = audio.o channels.o ci.o config.o cutter.o device.o diseqc.o dvbdevice.o dvbosd.o\
-       dvbplayer.o dvbspu.o eit.o eitscan.o epg.o filter.o font.o i18n.o interface.o keys.o\
+       dvbplayer.o dvbspu.o eit.o eitscan.o epg.o epgmode.o filter.o font.o i18n.o interface.o keys.o\
        lirc.o menu.o menuitems.o nit.o osdbase.o osd.o pat.o player.o plugin.o rcu.o\
        receiver.o recorder.o recording.o remote.o remux.o ringbuffer.o sdt.o sections.o\
        skinclassic.o skins.o skinsttng.o sources.o spu.o status.o svdrp.o themes.o thread.o\
@@ -107,7 +107,7 @@ font: genfontfile\
 	@echo "font files created."
 
 builddate.h: $(OBJS:%.o=%.c)
-	@echo "#define VDRM7X0VERSION \"Preview `date -u +"%F %H:%M"` (o7o subversion revision `svnversion | cut -d ":" -f 2`)\"" > builddate.h
+	@echo "#define VDRM7X0VERSION \"Preview `date -u +"%F %H:%M"` (o7o version: `cat o7o-version`)\"" > builddate.h
 
 # Implicit rules:
 
@@ -261,16 +261,4 @@ fontclean:
 	-rm -f fontfix*.c fontosd*.c fontsml*.c
 CLEAN: clean fontclean
 
-osdpainter.o: osdpainter.c
-	$(CXX) $(CXXFLAGS) -c $(DEFINES) -DOSDPAINTER $(INCLUDES) -o $@ osdpainter.c
 
-font-osdpainter.o: font.c
-	$(CXX) $(CXXFLAGS) -c $(DEFINES) -DOSDPAINTER $(INCLUDES) -o $@ font.c
-
-tools-osdpainter.o: tools.c
-	$(CXX) $(CXXFLAGS) -c $(DEFINES) -DOSDPAINTER $(INCLUDES) -o $@ tools.c
-OBJS_OSDPAINTER = osdpainter.o dvbosd.o osd.o font-osdpainter.o tools-osdpainter.o
-
-
-osdpainter: $(OBJS_OSDPAINTER)
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(OBJS_OSDPAINTER) -o osdpainter

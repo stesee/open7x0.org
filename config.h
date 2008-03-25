@@ -224,6 +224,11 @@ public:
   int EPGScanTimeout;
   int EPGBugfixLevel;
   int EPGLinger;
+//M7X0 BEGIN AK
+  int EPGDefaultMode;
+  int EPGInvDefaultMode;
+  int EPGChannelNoLimit;
+//M7X0 END AK
   int SVDRPTimeout;
   int ZapTimeout;
   int PrimaryLimit;

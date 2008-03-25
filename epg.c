@@ -11,6 +11,9 @@
  */
 
 #include "epg.h"
+//M7X0 BEGIN AK
+#include "epgmode.h"
+//M7X0 END AK
 #include <ctype.h>
 #include <time.h>
 #include "libsi/si.h"
@@ -644,7 +647,6 @@ Final:
 }
 
 // --- cSchedule -------------------------------------------------------------
-
 cSchedule::cSchedule(tChannelID ChannelID)
 {
   channelID = ChannelID;
@@ -833,6 +835,10 @@ void cSchedule::Cleanup(time_t Time)
 
 void cSchedule::Dump(FILE *f, const char *Prefix, eDumpMode DumpMode, time_t AtTime) const
 {
+//M7X0 BEGIN AK
+  if (EpgModes.GetModeByChannelID(&channelID)->GetMode() >= emNoSave)
+     return;
+//M7X0 END AK
   cChannel *channel = Channels.GetByChannelID(channelID, true);
   if (channel) {
      fprintf(f, "%sC %s %s\n", Prefix, *channel->GetChannelID().ToString(), channel->Name());
@@ -877,12 +883,28 @@ bool cSchedule::Read(FILE *f, cSchedules *Schedules)
               if (*s) {
                  tChannelID channelID = tChannelID::FromString(s);
                  if (channelID.Valid()) {
-                    cSchedule *p = Schedules->AddSchedule(channelID);
+//M7X0 BEGIN AK
+                    eEpgMode em = EpgModes.GetModeByChannelID(&channelID)->GetMode();
+                    cSchedule *p;
+                    if (em < emNowNext)
+                       p = Schedules->AddSchedule(channelID);
+                    else
+                       p = new cSchedule(channelID);
+
                     if (p) {
-                       if (!cEvent::Read(f, p))
+                       if (!cEvent::Read(f, p)) {
+                          if (em >= emNowNext)
+                             delete p;
                           return false;
-                       p->Sort();
-                       Schedules->SetModified(p);
+                          }
+
+                       if (em >= emNowNext) {
+                          delete p;
+                       } else {
+                          p->Sort();
+                          Schedules->SetModified(p);
+                          }
+//M7X0 END AK
                        }
                     }
                  else {

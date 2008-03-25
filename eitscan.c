@@ -10,6 +10,9 @@
 #include "eitscan.h"
 #include <stdlib.h>
 #include "channels.h"
+//M7X0 BEGIN AK
+#include "epgmode.h"
+//M7X0 END AK
 #include "dvbdevice.h"
 #include "skins.h"
 #include "transfer.h"
@@ -45,16 +48,27 @@ int cScanData::Compare(const cListObject &ListObject) const
 
 class cScanList : public cList<cScanData> {
 public:
-  void AddTransponders(cList<cChannel> *Channels);
+//M7X0 BEGIN AK
+  void AddTransponders(cList<cChannel> *Channels, bool checkEpgMode);
+//M7X0 END AK
   void AddTransponder(const cChannel *Channel);
   };
 
-void cScanList::AddTransponders(cList<cChannel> *Channels)
+//M7X0 BEGIN AK
+void cScanList::AddTransponders(cList<cChannel> *Channels, bool checkEpgMode)
 {
-  for (cChannel *ch = Channels->First(); ch; ch = Channels->Next(ch))
-      AddTransponder(ch);
+  for (cChannel *ch = Channels->First(); ch; ch = Channels->Next(ch)) {
+      if (checkEpgMode) {
+         tChannelID cid = ch->GetChannelID();
+         if (EpgModes.GetModeByChannelID(&cid)->GetMode() < emForeign)
+            AddTransponder(ch);
+         }
+      else
+         AddTransponder(ch);
+      }
   Sort();
 }
+//M7X0 END AK
 
 void cScanList::AddTransponder(const cChannel *Channel)
 {
@@ -131,15 +145,17 @@ void cEITScanner::Process(void)
      time_t now = time(NULL);
      if (now - lastScan > ScanTimeout && now - lastActivity > ActivityTimeout) {
         if (Channels.Lock(false, 10)) {
+//M7X0 BEGIN AK
            if (!scanList) {
               scanList = new cScanList;
-              scanList->AddTransponders(&Channels);
+              scanList->AddTransponders(&Channels, true);
               if (transponderList) {
-                 scanList->AddTransponders(transponderList);
+                 scanList->AddTransponders(transponderList, false);
                  delete transponderList;
                  transponderList = NULL;
                  }
               }
+//M7X0 END AK
            bool AnyDeviceSwitched = false;
            for (int i = 0; i < cDevice::NumDevices(); i++) {
                cDevice *Device = cDevice::GetDevice(i);
@@ -177,8 +193,12 @@ void cEITScanner::Process(void)
            if (!scanList->Count() || !AnyDeviceSwitched) {
               delete scanList;
               scanList = NULL;
-              if (lastActivity == 0) // this was a triggered scan
-                 Activity();
+//M7X0 BEGIN AK
+              // if (lastActivity == 0) // this was a triggered scan
+              // Lets do this always on scan complete. We should not keep
+              // scanning up all the time.
+              Activity();
+//M7X0 BEGIN AK
               }
            Channels.Unlock();
            }

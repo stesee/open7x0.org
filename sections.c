@@ -144,8 +144,9 @@ void cSectionHandler::SetChannel(const cChannel *Channel)
 
 void cSectionHandler::SetStatus(bool On)
 {
-  Lock();
+// M7X0 BEGIN AK
   if (on != On) {
+     Lock();
      if (!On || device->HasLock()) {
         statusCount++;
         for (cFilter *fi = filters.First(); fi; fi = filters.Next(fi)) {
@@ -158,8 +159,9 @@ void cSectionHandler::SetStatus(bool On)
         }
      else
         waitForLock = On;
+     Unlock();
      }
-  Unlock();
+// M7X0 END AK
 }
 
 void cSectionHandler::Action(void)

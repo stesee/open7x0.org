@@ -20,19 +20,17 @@ enum eDvbFont {
 #define eDvbFontSize (fontSml + 1)
   };
 
-//M7X0 BEGIN AK
+
 enum eDvbCode {
-#ifndef OSDPAINTER
   code_iso8859_1,
   code_iso8859_2,
   code_iso8859_5,
   code_iso8859_7,
   code_iso8859_13,
-#endif
   code_iso8859_15,
 #define eDvbCodeSize (code_iso8859_15 + 1)
   };
-//M7X0 END AK
+
 
 class cFont {
 public:

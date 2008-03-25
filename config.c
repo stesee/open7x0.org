@@ -240,6 +240,11 @@ cSetup::cSetup(void)
   EPGScanTimeout = 5;
   EPGBugfixLevel = 3;
   EPGLinger = 0;
+//M7X0 BEGIN AK
+  EPGDefaultMode = 0;
+  EPGInvDefaultMode = 2;
+  EPGChannelNoLimit = 30;
+//M7X0 END AK
   SVDRPTimeout = 300;
   ZapTimeout = 3;
   PrimaryLimit = 0;
@@ -404,6 +409,11 @@ bool cSetup::Parse(const char *Name, const char *Value)
   else if (!strcasecmp(Name, "EPGScanTimeout"))      EPGScanTimeout     = atoi(Value);
   else if (!strcasecmp(Name, "EPGBugfixLevel"))      EPGBugfixLevel     = atoi(Value);
   else if (!strcasecmp(Name, "EPGLinger"))           EPGLinger          = atoi(Value);
+//M7X0 BEGIN AK
+  else if (!strcasecmp(Name, "EPGDefaultMode"))      EPGDefaultMode     = atoi(Value);
+  else if (!strcasecmp(Name, "EPGInvDefaultMode"))   EPGInvDefaultMode  = atoi(Value);
+  else if (!strcasecmp(Name, "EPGChannelNoLimit"))   EPGChannelNoLimit  = atoi(Value);
+//M7X0 END AK
   else if (!strcasecmp(Name, "SVDRPTimeout"))        SVDRPTimeout       = atoi(Value);
   else if (!strcasecmp(Name, "ZapTimeout"))          ZapTimeout         = atoi(Value);
   else if (!strcasecmp(Name, "PrimaryLimit"))        PrimaryLimit       = atoi(Value);
@@ -475,6 +485,11 @@ bool cSetup::Save(void)
   Store("EPGScanTimeout",     EPGScanTimeout);
   Store("EPGBugfixLevel",     EPGBugfixLevel);
   Store("EPGLinger",          EPGLinger);
+//M7X0 BEGIN AK
+  Store("EPGDefaultMode",     EPGDefaultMode);
+  Store("EPGInvDefaultMode",  EPGInvDefaultMode);
+  Store("EPGChannelNoLimit",  EPGChannelNoLimit);
+//M7X0 END AK
   Store("SVDRPTimeout",       SVDRPTimeout);
   Store("ZapTimeout",         ZapTimeout);
   Store("PrimaryLimit",       PrimaryLimit);

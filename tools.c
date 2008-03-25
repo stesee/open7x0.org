@@ -48,8 +48,7 @@ bool getIaMode(){
 
 
 #define MAXSYSLOGBUF 256
-//M7X0 BEGIN AK
-#ifndef OSDPAINTER
+
 void syslog_with_tid(int priority, const char *format, ...)
 {
   va_list ap;
@@ -59,8 +58,6 @@ void syslog_with_tid(int priority, const char *format, ...)
   vsyslog(priority, fmt, ap);
   va_end(ap);
 }
-#endif
-//M7X0 END AK
 int BCD2INT(int x)
 {
   return ((1000000 * BCDCHARTOINT((x >> 24) & 0xFF)) +
@@ -634,8 +631,7 @@ cString cString::sprintf(const char *fmt, ...)
   vasprintf(&buffer, fmt, ap);
   return cString(buffer, true);
 }
-//M7X0 BEGIN AK
-#ifndef OSDPAINTER
+
 cString WeekDayName(int WeekDay)
 {
   char buffer[4];
@@ -695,8 +691,6 @@ cString TimeString(time_t t)
   strftime(buf, sizeof(buf), "%R", localtime_r(&t, &tm_r));
   return buf;
 }
-#endif
-//M7X0 END AK
 // --- RgbToJpeg -------------------------------------------------------------
 //M7X0 BEGIN AK
 #ifdef WITH_LIBJPEG

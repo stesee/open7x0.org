@@ -105,9 +105,8 @@ template<class T> inline int sgn(const T a) { return a < 0 ? -1 : a > 0 ? 1 : 0;
 template<class T> inline void swap(T &a, T &b) { T t = a; a = b; b = t; }
 #endif
 
-#ifndef OSDPAINTER
 void syslog_with_tid(int priority, const char *format, ...) __attribute__ ((format (printf, 2, 3)));
-#endif
+
 //M7X0 END AK
 
 #define BCDCHARTOINT(x) (10 * ((x & 0xF0) >> 4) + (x & 0xF))
@@ -173,16 +172,12 @@ char *ReadLink(const char *FileName); ///< returns a new string allocated on the
 bool SpinUpDisk(const char *FileName);
 void TouchFile(const char *FileName);
 time_t LastModifiedTime(const char *FileName);
-//M7X0 BEGIN AK
-#ifndef OSDPAINTER
 cString WeekDayName(int WeekDay);
 cString WeekDayName(time_t t);
 cString DayDateTime(time_t t = 0);
 cString TimeToString(time_t t);
 cString DateString(time_t t);
 cString TimeString(time_t t);
-#endif
-//M7X0 END
 uchar *RgbToJpeg(uchar *Mem, int Width, int Height, int &Size, int Quality = 100);
     ///< Converts the given Memory to a JPEG image and returns a pointer
     ///< to the resulting image. Mem must point to a data block of exactly

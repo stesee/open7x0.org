@@ -20,9 +20,12 @@ class cTransponderList;
 
 class cEITScanner {
 private:
+//M7X0 BEGIN AK
+// Increase timeouts.
   enum { ActivityTimeout = 60,
-         ScanTimeout = 20
+         ScanTimeout = 30
        };
+//M7X0 END AK
   time_t lastScan, lastActivity;
   cDevice *currentDevice;
   int currentChannel;

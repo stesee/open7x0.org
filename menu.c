@@ -17,6 +17,9 @@
 #include "config.h"
 #include "cutter.h"
 #include "eitscan.h"
+//M7X0 BEGIN AK
+#include "epgmode.h"
+//M7X0 END AK
 #include "i18n.h"
 #include "interface.h"
 #include "plugin.h"
@@ -2227,11 +2230,12 @@ eOSState cMenuSetupOSD::ProcessKey(eKeys Key)
 }
 
 // --- cMenuSetupEPG ---------------------------------------------------------
-
+//M7X0 BEGIN AK
 class cMenuSetupEPG : public cMenuSetupBase {
 private:
   int originalNumLanguages;
   int numLanguages;
+  const char *epgModeStr[5];
   void Setup(void);
 public:
   cMenuSetupEPG(void);
@@ -2247,6 +2251,7 @@ cMenuSetupEPG::cMenuSetupEPG(void)
   SetHelp(tr("Button$Scan"));
   Setup();
 }
+
 
 void cMenuSetupEPG::Setup(void)
 {
@@ -2264,10 +2269,23 @@ void cMenuSetupEPG::Setup(void)
   for (int i = 0; i < numLanguages; i++)
      Add(new cMenuEditStraItem(tr("Setup.EPG$Preferred language"),     &data.EPGLanguages[i], I18nNumLanguages, I18nLanguages()));
 
+  epgModeStr[0] = tr("Setup.EPG$Full EPG");
+  epgModeStr[1] = tr("Setup.EPG$Foreign EPG");
+  epgModeStr[2] = tr("Setup.EPG$Do not save");
+  epgModeStr[3] = tr("Setup.EPG$Now and Next only");
+  epgModeStr[4] = tr("Setup.EPG$No EPG");
+
+  Add(new cMenuEditStraItem(tr("Setup.EPG$Channel Default Mode"),
+                             &data.EPGDefaultMode,
+                             5, epgModeStr));
+  Add(new cMenuEditStraItem(tr("Setup.EPG$Channel Inverse Mode"),
+                             &data.EPGInvDefaultMode,
+                             5, epgModeStr));
+  Add(new cMenuEditIntItem(tr("Setup.EPG$Channel Limit"),&data.EPGChannelNoLimit));
   SetCurrent(Get(current));
   Display();
 }
-
+//M7X0 END AK
 eOSState cMenuSetupEPG::ProcessKey(eKeys Key)
 {
   if (Key == kOk) {
@@ -2314,6 +2332,75 @@ eOSState cMenuSetupEPG::ProcessKey(eKeys Key)
      }
   return state;
 }
+//M7X0 BEGIN AK
+// --- cMenuSetupEPGMode -----------------------------------------------------
+
+
+class cMenuSetupEPGMode : public cMenuSetupPage {
+private:
+  class clModeItem : public cListObject {
+    public:
+      eEpgMode epgVal;
+      cEpgMode *epgMode;
+  };
+  cList<clModeItem> modes;
+  void Set(void);
+  const char *epgModeStr[7];
+protected:
+  virtual void Store(void);
+public:
+  cMenuSetupEPGMode(void) { Set(); }
+};
+
+void cMenuSetupEPGMode::Set(void)
+{
+  SetSection(tr("EPG Channel Modes"));
+
+  epgModeStr[0] = tr("Setup.EPG$Default Mode");
+  epgModeStr[1] = tr("Setup.EPG$Inverse Mode");
+  epgModeStr[2] = tr("Setup.EPG$Full EPG");
+  epgModeStr[3] = tr("Setup.EPG$Foreign EPG");
+  epgModeStr[4] = tr("Setup.EPG$Do not save");
+  epgModeStr[5] = tr("Setup.EPG$Now and Next only");
+  epgModeStr[6] = tr("Setup.EPG$No EPG");
+
+  char buffer[256];
+  for (cChannel *channel = Channels.First(); channel; channel = Channels.Next(channel)) {
+      if (!channel->GroupSep()) {
+         snprintf(buffer,256, "%d %s - %s", channel->Number(),
+                  channel->Provider(), channel->Name());
+         buffer[255] = 0;
+         clModeItem *modeIt = new clModeItem;
+         tChannelID chID = channel->GetChannelID();
+         modeIt->epgMode = EpgModes.GetModeByChannelID(&chID);
+         modeIt->epgVal = modeIt->epgMode->GetMode(false);
+         modes.Add(modeIt);
+         cMenuEditStraItem *item = new cMenuEditStraItem(buffer,
+                                         (int *)&modeIt->epgVal,7, epgModeStr);
+         Add(item);
+         }
+       else {
+         snprintf(buffer,256, "---\t%s ----------------------------------------------------------------", channel->Name());
+         buffer[255] = 0;
+         Add(new cOsdItem(buffer, osUnknown, false));
+         }
+     }
+  Display();
+}
+
+void cMenuSetupEPGMode::Store(void)
+{
+  bool changed = false;
+  for (clModeItem *it = modes.First(); it; it = modes.Next(it)) {
+      if (it->epgVal != it->epgMode->GetMode(false)) {
+         changed = true;
+         it->epgMode->SetMode(it->epgVal);
+         }
+      }
+  if (changed)
+     EpgModes.Save();
+}
+//M7X0 END AK
 
 // --- cMenuSetupDVB ---------------------------------------------------------
 
@@ -2735,15 +2822,18 @@ void cMenuSetup::Set(void)
   SetHasHotkeys();
   Add(new cOsdItem(hk(tr("OSD")),           osUser1));
   Add(new cOsdItem(hk(tr("EPG")),           osUser2));
-  Add(new cOsdItem(hk(tr("DVB")),           osUser3));
-  Add(new cOsdItem(hk(tr("LNB")),           osUser4));
-  Add(new cOsdItem(hk(tr("CICAM")),         osUser5));
-  Add(new cOsdItem(hk(tr("Recording")),     osUser6));
-  Add(new cOsdItem(hk(tr("Replay")),        osUser7));
-  Add(new cOsdItem(hk(tr("Miscellaneous")), osUser8));
+//M7X0 BEGIN AK
+  Add(new cOsdItem(hk(tr("EPG Channel Modes")), osUser3));
+  Add(new cOsdItem(hk(tr("DVB")),           osUser4));
+  Add(new cOsdItem(hk(tr("LNB")),           osUser5));
+  Add(new cOsdItem(hk(tr("CICAM")),         osUser6));
+  Add(new cOsdItem(hk(tr("Recording")),     osUser7));
+  Add(new cOsdItem(hk(tr("Replay")),        osUser8));
+  Add(new cOsdItem(hk(tr("Miscellaneous")), osUser9));
   if (cPluginManager::HasPlugins())
-  Add(new cOsdItem(hk(tr("Plugins")),       osUser9));
-  Add(new cOsdItem(hk(tr("Restart")),       osUser10));
+  Add(new cOsdItem(hk(tr("Plugins")),       osUser10));
+  Add(new cOsdItem(hk(tr("Restart")),       (eOSState) (osUser10 + 1)));
+//M7X0 END AK
 }
 
 eOSState cMenuSetup::Restart(void)
@@ -2763,16 +2853,19 @@ eOSState cMenuSetup::ProcessKey(eKeys Key)
   eOSState state = cOsdMenu::ProcessKey(Key);
 
   switch (state) {
+//M7X0 BEGIN AK
     case osUser1: return AddSubMenu(new cMenuSetupOSD);
     case osUser2: return AddSubMenu(new cMenuSetupEPG);
-    case osUser3: return AddSubMenu(new cMenuSetupDVB);
-    case osUser4: return AddSubMenu(new cMenuSetupLNB);
-    case osUser5: return AddSubMenu(new cMenuSetupCICAM);
-    case osUser6: return AddSubMenu(new cMenuSetupRecord);
-    case osUser7: return AddSubMenu(new cMenuSetupReplay);
-    case osUser8: return AddSubMenu(new cMenuSetupMisc);
-    case osUser9: return AddSubMenu(new cMenuSetupPlugins);
-    case osUser10: return Restart();
+    case osUser3: return AddSubMenu(new cMenuSetupEPGMode);
+    case osUser4: return AddSubMenu(new cMenuSetupDVB);
+    case osUser5: return AddSubMenu(new cMenuSetupLNB);
+    case osUser6: return AddSubMenu(new cMenuSetupCICAM);
+    case osUser7: return AddSubMenu(new cMenuSetupRecord);
+    case osUser8: return AddSubMenu(new cMenuSetupReplay);
+    case osUser9: return AddSubMenu(new cMenuSetupMisc);
+    case osUser10: return AddSubMenu(new cMenuSetupPlugins);
+    case osUser10 + 1: return Restart();
+//M7X0 BEGIN AK
     default: ;
     }
   if (Setup.OSDLanguage != osdLanguage) {
