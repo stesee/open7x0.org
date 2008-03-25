@@ -74,6 +74,7 @@ enum eKeys { // "Up" and "Down" must be the first two keys!
 #define ISRAWKEY(k)      ((k) != kNone && ((k) & k_Flags) == 0)
 #define NORMALKEY(k)     (eKeys((k) & ~k_Repeat))
 #define ISMODELESSKEY(k) (RAWKEY(k) > k9)
+#define ISREALKEY(k)     (k != kNone && k != k_Plugin)
 
 #define BASICKEY(k)      (eKeys((k) & 0xFFFF))
 #define KBDKEY(k)        (eKeys(((k) << 16) | kKbd))

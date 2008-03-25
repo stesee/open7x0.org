@@ -17,7 +17,7 @@
 #include "remux.h"
 #include <stdlib.h>
 #include "channels.h"
-#include "thread.h"
+#include "shutdown.h"
 #include "tools.h"
 
 //M7X0 BEGIN AK
@@ -1658,7 +1658,7 @@ int cRemux::Put(uchar *Data, int Count, const sTsDataHeader *const Header)
         esyslog("ERROR: no useful data seen within %d byte of video stream", skipped);
         skipped = -1;
         if (exitOnFailure)
-           cThread::EmergencyExit(true);
+           ShutdownHandler.RequestEmergencyExit();
         }
      else
         skipped += used;
@@ -1713,7 +1713,7 @@ int cRemux::Put(uchar *Data, int Count)
         esyslog("ERROR: no useful data seen within %d byte of video stream", skipped);
         skipped = -1;
         if (exitOnFailure)
-           cThread::EmergencyExit(true);
+           ShutdownHandler.RequestEmergencyExit();
         }
      else
         skipped += used;

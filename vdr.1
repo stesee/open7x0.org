@@ -153,6 +153,14 @@ Print version information and exit.
 .BI \-w\  sec ,\ \-\-watchdog= sec
 Activate the watchdog timer with a timeout of \fIsec\fR seconds.
 A value of \fB0\fR (default) disables the watchdog.
+.SH SIGNALS
+.TP
+.B SIGINT, SIGTERM
+Program exits with status 0.
+.TP
+.B SIGHUP
+Program exits with status 1. This can be used to force a reload, for example
+if an update has been installed.
 .SH EXIT STATUS
 .TP
 .B 0

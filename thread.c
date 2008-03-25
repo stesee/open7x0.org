@@ -20,6 +20,7 @@
 //M7X0 END AK
 #include <sys/wait.h>
 #include <unistd.h>
+#include "shutdown.h"
 #include "tools.h"
 
 static bool GetAbsTime(struct timespec *Abstime, int MillisecondsFromNow)
@@ -230,7 +231,6 @@ void cMutex::Unlock(void)
 // --- cThread ---------------------------------------------------------------
 
 tThreadId cThread::mainThreadId = 0;
-bool cThread::emergencyExitRequested = false;
 
 cThread::cThread(const char *Description)
 {
@@ -341,9 +341,9 @@ void cThread::Cancel(int WaitSeconds)
 bool cThread::EmergencyExit(bool Request)
 {
   if (!Request)
-     return emergencyExitRequested;
-  esyslog("initiating emergency exit");
-  return emergencyExitRequested = true; // yes, it's an assignment, not a comparison!
+     return ShutdownHandler.EmergencyExitRequested();
+  ShutdownHandler.RequestEmergencyExit();
+  return true;
 }
 
 tThreadId cThread::ThreadId(void)
@@ -523,7 +523,7 @@ int cPipe::Close(void)
 
 // --- SystemExec ------------------------------------------------------------
 
-int SystemExec(const char *Command)
+int SystemExec(const char *Command, bool Detached)
 {
   pid_t pid;
 
@@ -533,7 +533,7 @@ int SystemExec(const char *Command)
      }
 
   if (pid > 0) { // parent process
-     int status;
+     int status = 0;
      if (waitpid(pid, &status, 0) < 0) {
         LOG_ERROR;
         return -1;
@@ -541,6 +541,19 @@ int SystemExec(const char *Command)
      return status;
      }
   else { // child process
+     if (Detached) {
+        // Fork again and let first child die - grandchild stays alive without parent
+        if (fork() > 0)
+           _exit(0);
+        // Start a new session
+        pid_t sid = setsid();
+        if (sid < 0)
+           LOG_ERROR;
+        // close STDIN and re-open as /dev/null
+        int devnull = open("/dev/null", O_RDONLY);
+        if (devnull < 0 || dup2(devnull, 0) < 0)
+           LOG_ERROR;
+        }
      int MaxPossibleFileDescriptors = getdtablesize();
      for (int i = STDERR_FILENO + 1; i < MaxPossibleFileDescriptors; i++)
          close(i); //close all dup'ed filedescriptors

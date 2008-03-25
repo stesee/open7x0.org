@@ -169,6 +169,7 @@ public:
   virtual void Housekeeping(void);
   virtual void MainThreadHook(void);
   virtual cString Active(void);
+  virtual time_t WakeupTime(void);
   virtual const char *MainMenuEntry(void) { return MAINMENUENTRY; }
   virtual cOsdObject *MainMenuAction(void);
   virtual cMenuSetupPage *SetupMenu(void);
@@ -234,6 +235,12 @@ cString cPlugin${PLUGIN_CLASS}::Active(void)
 {
   // Return a message string if shutdown should be postponed
   return NULL;
+}
+
+time_t cPlugin${PLUGIN_CLASS}::WakeupTime(void)
+{
+  // Return custom wakeup time for shutdown script
+  return 0;
 }
 
 cOsdObject *cPlugin${PLUGIN_CLASS}::MainMenuAction(void)

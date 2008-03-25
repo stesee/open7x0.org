@@ -22,6 +22,8 @@
                                       extern "C" int getVDRO7OAPIVersion(void) { return VDRO7OAPIVERSION; } \
                                       extern "C" const char* getO7OToolchainVersion(void) { return O7OTOOLCHAINVERSION; }
 
+#define PATCH_SHUTDOWN_REWRITE 100
+
 //M7X0 END AK
 class cPlugin {
   friend class cDll;
@@ -47,6 +49,7 @@ public:
   virtual void Housekeeping(void);
   virtual void MainThreadHook(void);
   virtual cString Active(void);
+  virtual time_t WakeupTime(void);
 
   virtual const char *MainMenuEntry(void);
   virtual cOsdObject *MainMenuAction(void);
@@ -99,6 +102,7 @@ public:
   void Housekeeping(void);
   void MainThreadHook(void);
   static bool Active(const char *Prompt = NULL);
+  static cPlugin *GetNextWakeupPlugin(void);
   static bool HasPlugins(void);
   static cPlugin *GetPlugin(int Index);
   static cPlugin *GetPlugin(const char *Name);

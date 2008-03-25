@@ -28,6 +28,7 @@ private:
   static char *unknownCode;
   static cMutex mutex;
   static cCondVar keyPressed;
+  static time_t lastActivity;
   static const char *keyMacroPlugin;
   static const char *callPlugin;
   char *name;
@@ -61,6 +62,10 @@ public:
       ///< plugin name will be reset to NULL by this call.
   static bool HasKeys(void);
   static eKeys Get(int WaitMs = 1000, char **UnknownCode = NULL);
+  static time_t LastActivity(void) { return lastActivity; }
+      ///< Absolute time when last key was delivered by Get().
+  static void DEPRECATED_1_4_TouchLastActivity() { lastActivity = time(NULL); }
+      ///< Set last key press time to now. Only avalilable in v1.4 version of patch.
   };
 
 class cRemotes : public cList<cRemote> {};

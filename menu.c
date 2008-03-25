@@ -25,6 +25,7 @@
 #include "plugin.h"
 #include "recording.h"
 #include "remote.h"
+#include "shutdown.h"
 #include "sources.h"
 #include "status.h"
 #include "themes.h"
@@ -2838,10 +2839,8 @@ void cMenuSetup::Set(void)
 
 eOSState cMenuSetup::Restart(void)
 {
-  if (Interface->Confirm(tr("Really restart?"))
-     && (!cRecordControls::Active() || Interface->Confirm(tr("Recording - restart anyway?")))
-     && !cPluginManager::Active(tr("restart anyway?"))) {
-     cThread::EmergencyExit(true);
+  if (Interface->Confirm(tr("Really restart?")) && ShutdownHandler.ConfirmRestart(true)) {
+     ShutdownHandler.Exit(1);
      return osEnd;
      }
   return osContinue;
@@ -3792,7 +3791,7 @@ bool cRecordControls::Start(cTimer *Timer, bool Pause)
            }
         dsyslog("switching device %d to channel %d", device->DeviceNumber() + 1, channel->Number());
         if (!device->SwitchChannel(channel, false)) {
-           cThread::EmergencyExit(true);
+           ShutdownHandler.RequestEmergencyExit();
            return false;
            }
         if (!Timer || Timer->Matches()) {

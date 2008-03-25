@@ -31,6 +31,7 @@ cMutex cRemote::mutex;
 cCondVar cRemote::keyPressed;
 const char *cRemote::keyMacroPlugin = NULL;
 const char *cRemote::callPlugin = NULL;
+time_t cRemote::lastActivity = 0;
 
 cRemote::cRemote(const char *Name)
 {
@@ -183,6 +184,7 @@ eKeys cRemote::Get(int WaitMs, char **UnknownCode)
             out = 0;
          if ((k & k_Repeat) != 0)
             repeatTimeout.Set(REPEATTIMEOUT);
+         lastActivity = time(NULL);
          return k;
          }
       else if (!WaitMs || !keyPressed.TimedWait(mutex, WaitMs) && repeatTimeout.TimedOut())

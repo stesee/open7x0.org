@@ -51,6 +51,7 @@ structures and allows it to hook itself into specific areas to perform special a
 <li><a href="#Housekeeping">Housekeeping</a>
 <li><a href="#Main thread hook">Main thread hook</a>
 <li><a href="#Activity">Activity</a>
+<li><a href="#Wakeup">Wakeup</a>
 <li><a href="#Setup parameters">Setup parameters</a>
 <li><a href="#The Setup menu">The Setup menu</a>
 <li><a href="#Configuration files">Configuration files</a>
@@ -667,6 +668,39 @@ the prompt by pressing the "Ok" button, the rest of the plugins will also
 be queried, and further prompts may show up. If all prompts have been confirmed,
 the shutdown will take place. As soon as one prompt is not confirmed, no
 further plugins will be queried and no shutdown will be done.
+
+<a name="Wakeup"><hr><h2>Wakeup</h2>
+
+<center><i><b>Wake me up before you go-go</b></i></center><p>
+
+If a plugin wants to schedule activity for a later time, or wants to perform
+periodic activity at a certain time at night, and if VDR shall wake up from
+shutdown at that time, the plugin can implement the function
+
+<p><table><tr><td bgcolor=#F0F0F0><pre>
+virtual time_t WakeupTime(void);
+</pre></td></tr></table><p>
+
+which shall return the time of the next custom wakeup time, or 0 if no wakeup
+is planned. VDR will pass the most recent wakeup time of all plugins, or the next
+timer time, whichever comes first, to the shutdown script. The following sample
+will wake up VDR every night at 1:00:
+
+<p><table><tr><td bgcolor=#F0F0F0><pre>
+time_t MyPlugin::WakeupTime(void)
+{
+  time_t Now = time(NULL);
+  time_t Time = cTimer::SetTime(Now, cTimer::TimeToInt(100));
+  if (Time &lt;= Now)
+     Time = cTimer::IncDay(Time, 1);
+  return Time;
+}
+</pre></td></tr></table><p>
+
+After wakeup, the plugin shall continue to return the wakeup time and shall
+return a string when <tt>Active()</tt> is called at that time, otherwise VDR may shut down
+again instantly. If <tt>WakeupTime()</tt> returns a time that is not in
+the future, the time will be ignored.
 
 <a name="Setup parameters"><hr><h2>Setup parameters</h2>
 

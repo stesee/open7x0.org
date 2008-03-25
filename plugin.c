@@ -80,6 +80,11 @@ cString cPlugin::Active(void)
   return NULL;
 }
 
+time_t cPlugin::WakeupTime(void)
+{
+  return 0;
+}
+
 const char *cPlugin::MainMenuEntry(void)
 {
   return NULL;
@@ -417,6 +422,26 @@ bool cPluginManager::Active(const char *Prompt)
          }
      }
   return false;
+}
+
+cPlugin *cPluginManager::GetNextWakeupPlugin(void)
+{
+  cPlugin *NextPlugin = NULL;
+  if (pluginManager) {
+     time_t Now = time(NULL);
+     time_t Next = 0;
+     for (cDll *dll = pluginManager->dlls.First(); dll; dll = pluginManager->dlls.Next(dll)) {
+         cPlugin *p = dll->Plugin();
+         if (p) {
+            time_t t = p->WakeupTime();
+            if (t > Now && (!Next || t < Next)) {
+               Next = t;
+               NextPlugin = p;
+               }
+            }
+         }
+     }
+  return NextPlugin;
 }
 
 bool cPluginManager::HasPlugins(void)

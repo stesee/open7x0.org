@@ -84,7 +84,6 @@ private:
   cMutex mutex;
   char *description;
   static tThreadId mainThreadId;
-  static bool emergencyExitRequested;
   static void *StartThread(cThread *Thread);
 protected:
   void SetPriority(int Priority);
@@ -174,7 +173,9 @@ public:
 
 // SystemExec() implements a 'system()' call that closes all unnecessary file
 // descriptors in the child process.
+// With Detached=true, calls command in background and in a separate session,
+// with stdin connected to /dev/null.
 
-int SystemExec(const char *Command);
+int SystemExec(const char *Command, bool Detached = false);
 
 #endif //__THREAD_H

@@ -11,6 +11,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <unistd.h>
+#include "shutdown.h"
 
 #define RECORDERBUFSIZE  MEGABYTE(4)
 
@@ -151,7 +152,7 @@ void cFileWriter::Action(void)
 #ifdef USE_WATCHDOG_IN_FILEWRITER
         else if (time(NULL) - t > MAXBROKENTIMEOUT) {
            esyslog("ERROR: video data stream broken");
-           cThread::EmergencyExit(true);
+           ShutdownHandler.RequestEmergencyExit();
            t = time(NULL);
            }
 #endif

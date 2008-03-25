@@ -253,6 +253,7 @@ public:
   int MaxVideoFileSize;
   int SplitEditedFiles;
   int MinEventTimeout, MinUserInactivity;
+  time_t NextWakeupTime;
   int MultiSpeedMode;
   int ShowReplayMode;
   int ResumeID;
