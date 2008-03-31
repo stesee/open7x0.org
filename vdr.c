@@ -952,9 +952,18 @@ int main(int argc, char *argv[])
         // User Input:
         cOsdObject *Interact = Menu ? Menu : cControl::Control();
         eKeys key = Interface->GetKey((!Interact || !Interact->NeedsFastResponse()) && time(NULL) - LastCamMenu > LASTCAMMENUTIMEOUT);
-	
+
+        if (ISREALKEY(key)) {
+           EITScanner.Activity();
+           // Cancel shutdown countdown:
+           if (ShutdownHandler.countdown)
+              ShutdownHandler.countdown.Cancel();
+           // Set user active for MinUserInactivity time in the future:
+           ShutdownHandler.SetUserInactiveTimeout();
+           }
+	   	
 	// m7x0 HotStanby and iaMode
-	if (!getIaMode()){
+	if (!getIaMode()) {
 	   if (NORMALKEY(key) != kPower) { 
 	      key = kNone;
 	   }else{
@@ -965,14 +974,6 @@ int main(int argc, char *argv[])
 	   }
 	}
 	
-        if (ISREALKEY(key)) {
-           EITScanner.Activity();
-           // Cancel shutdown countdown:
-           if (ShutdownHandler.countdown)
-              ShutdownHandler.countdown.Cancel();
-           // Set user active for MinUserInactivity time in the future:
-           ShutdownHandler.SetUserInactiveTimeout();
-           }
         // Keys that must work independent of any interactive mode:
         switch (key) {
           // Menu control:
@@ -1305,29 +1306,31 @@ int main(int argc, char *argv[])
  
             // Shutdown:
             // Check whether VDR will be ready for shutdown in SHUTDOWNWAIT seconds:
-	    if (!Setup.HotStandby) {
             time_t Soon = time(NULL) + SHUTDOWNWAIT;
             if (ShutdownHandler.IsUserInactive(Soon) && ShutdownHandler.Retry(Soon) && !ShutdownHandler.countdown) {
-               if (ShutdownHandler.ConfirmShutdown(false))
+               if (ShutdownHandler.ConfirmShutdown(false) && !Setup.HotStandby)
                   // Time to shut down - start final countdown:
                   ShutdownHandler.countdown.Start(tr("VDR will shut down in %s minutes"), SHUTDOWNWAIT); // the placeholder is really %s!
+		else
+		  ShutdownHandler.countdown.Start(tr("VDR will go in HotStandby in %s minutes"), SHUTDOWNWAIT);
                // Dont try to shut down again for a while:
                ShutdownHandler.SetRetry(SHUTDOWNRETRY);
                }
             // Countdown run down to 0?
             if (ShutdownHandler.countdown.Done()) {
                // Timed out, now do a final check:
+	       if (!Setup.HotStandby) {
                if (ShutdownHandler.IsUserInactive() && ShutdownHandler.ConfirmShutdown(false))
                   ShutdownHandler.DoShutdown(false);
                // Do this again a bit later:
                ShutdownHandler.SetRetry(SHUTDOWNRETRY);
-               }
-	       } else {
+               } else {
 		    if(getIaMode()){
 			dsyslog("DEBUG: HotStandby ACTIVITYTIMEOUT");
 			setIaMode(0);
 			cDevice::PrimaryDevice()->SetTvSettings(0);
 		    }
+		}
 		}
  
             // Disk housekeeping:

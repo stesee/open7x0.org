@@ -1755,7 +1755,7 @@ uchar *cRemux::Get(int &Count,sPesResult *&Header, int &HeaderCount, int &FirstI
       if (header[i].pictureType <= 0 ||  B_FRAME < header[i].pictureType) {
          esyslog("ERROR: unknown picture type '0x%02hhX'",  header[i].pictureType);
          if (++numUPTerrors > MAXNUMUPTERRORS && exitOnFailure)
-            cThread::EmergencyExit(true);
+            ShutdownHandler.RequestEmergencyExit();
          header[i].pictureType = NO_PICTURE;
          }
       else if (firstIFrame == -1 && header[i].pictureType == I_FRAME)
