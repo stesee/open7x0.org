@@ -175,7 +175,7 @@ static bool SetKeepCaps(bool On)
 
 static void SignalHandler(int signum)
 {
-// DON'T EVER DO THIS OR ZOU END UP WITH A SIGHANDLER RACE
+// DON'T EVER DO THIS OR YOU END UP WITH A SIGHANDLER RACE
 //  isyslog("caught signal %d", signum);
   switch (signum) {
     case SIGPIPE:
@@ -617,9 +617,6 @@ int main(int argc, char *argv[])
      EXIT(2);
 
   cFont::SetCode(I18nCharSets()[Setup.OSDLanguage]);
-  
-  if(Setup.HotStandby)
-    setIaMode(0);
 
   // EPG data:
 //M7X0 BEGIN AK
@@ -955,6 +952,19 @@ int main(int argc, char *argv[])
         // User Input:
         cOsdObject *Interact = Menu ? Menu : cControl::Control();
         eKeys key = Interface->GetKey((!Interact || !Interact->NeedsFastResponse()) && time(NULL) - LastCamMenu > LASTCAMMENUTIMEOUT);
+	
+	// m7x0 HotStanby and iaMode
+	if (!getIaMode()){
+	   if (NORMALKEY(key) != kPower) { 
+	      key = kNone;
+	   }else{
+	      dsyslog("DEBUG: wakeup from IaMode");
+	      setIaMode(1);
+	      cDevice::PrimaryDevice()->SetTvSettings(1);
+	      key = kNone;
+	   }
+	}
+	
         if (ISREALKEY(key)) {
            EITScanner.Activity();
            // Cancel shutdown countdown:
@@ -964,7 +974,6 @@ int main(int argc, char *argv[])
            ShutdownHandler.SetUserInactiveTimeout();
            }
         // Keys that must work independent of any interactive mode:
-	if(getIaMode()){
         switch (key) {
           // Menu control:
           case kMenu: {
@@ -1121,16 +1130,19 @@ int main(int argc, char *argv[])
           // Power off:
           case kPower: {
                 isyslog("Power button pressed");
+		DELETE_MENU;
 		if(Setup.HotStandby){
 		    setIaMode(0);
 		    cDevice::PrimaryDevice()->SetTvSettings(0);
 		    cControl::Shutdown();
 		    break;
 		}
-                DELETE_MENU;
                 // Check for activity, request power button again if active:
-                if (!ShutdownHandler.ConfirmShutdown(false) && Skins.Message(mtWarning, tr("VDR will shut down later - press Power to force"), SHUTDOWNFORCEPROMPT) != kPower) {
-                   // Not pressed power - set VDR to be non-interactive and power down later:
+                //if (!ShutdownHandler.ConfirmShutdown(false) && Skins.Message(mtWarning, tr("VDR will shut down later - press Power to force"), SHUTDOWNFORCEPROMPT) != kPower) {
+                if (!ShutdownHandler.ConfirmShutdown(false)){
+		   setIaMode(0);
+		   cDevice::PrimaryDevice()->SetTvSettings(0);	 
+		   // Not pressed power - set VDR to be non-interactive and power down later:
                    ShutdownHandler.SetUserInactive();
                    break;
                    }
@@ -1263,13 +1275,7 @@ int main(int argc, char *argv[])
              default: break;
              }
            }
-	   }else{
-	   if(NORMALKEY(key) == kPower){
-	        dsyslog("DEBUG: wakeup from IaMode");
-		setIaMode(1);
-		cDevice::PrimaryDevice()->SetTvSettings(1);
-		}
-	   }
+
         if (!Menu) {
            if (!InhibitEpgScan)
               EITScanner.Process();
@@ -1299,7 +1305,7 @@ int main(int argc, char *argv[])
  
             // Shutdown:
             // Check whether VDR will be ready for shutdown in SHUTDOWNWAIT seconds:
-	    if(!Setup.HotStandby){
+	    if (!Setup.HotStandby) {
             time_t Soon = time(NULL) + SHUTDOWNWAIT;
             if (ShutdownHandler.IsUserInactive(Soon) && ShutdownHandler.Retry(Soon) && !ShutdownHandler.countdown) {
                if (ShutdownHandler.ConfirmShutdown(false))
@@ -1316,7 +1322,7 @@ int main(int argc, char *argv[])
                // Do this again a bit later:
                ShutdownHandler.SetRetry(SHUTDOWNRETRY);
                }
-	       }else{
+	       } else {
 		    if(getIaMode()){
 			dsyslog("DEBUG: HotStandby ACTIVITYTIMEOUT");
 			setIaMode(0);
@@ -1374,7 +1380,6 @@ Exit:
   ReportEpgBugFixStats();
   if (WatchdogTimeout > 0)
      dsyslog("max. latency time %d seconds", MaxLatencyTime);
-  //isyslog("exiting");
   isyslog("exiting, exit code %d", ShutdownHandler.GetExitCode());
   if (ShutdownHandler.EmergencyExitRequested())
      esyslog("emergency exit!");

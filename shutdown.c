@@ -126,10 +126,8 @@ void cShutdownHandler::CallShutdownCommand(time_t WakeupTime, int Channel, const
   time_t Delta = WakeupTime ? WakeupTime - time(NULL) : 0;
   cString cmd = cString::sprintf("%s %ld %ld %d \"%s\" %d", shutdownCommand, WakeupTime, Delta, Channel, *strescape(File, "\"$"), UserShutdown);
   isyslog("executing '%s'", *cmd);
-  if (SystemExec(cmd, true) == 0){
-    dsyslog("DEBUG: cmd exit 0");
+  if (SystemExec(cmd, true) == 0)
      Setup.NextWakeupTime = WakeupTime; // Remember this wakeup time for comparison on reboot
-     }
 }
 
 void cShutdownHandler::SetUserInactiveTimeout(int Seconds, bool Force)
@@ -169,11 +167,13 @@ bool cShutdownHandler::ConfirmShutdown(bool Interactive)
      // VPS recordings in timer end margin may cause Delta <= 0
      if (!Interactive || !Interface->Confirm(tr("Recording - shut down anyway?")))
         return false;
+*/
      }
   else if (Next && Delta <= Setup.MinEventTimeout * 60) {
      // Timer within Min Event Timeout
      if (!Interactive)
         return false;
+/*
      cString buf = cString::sprintf(tr("Recording in %ld minutes, shut down anyway?"), Delta / 60);
      if (!Interface->Confirm(buf))
         return false;
@@ -189,9 +189,9 @@ bool cShutdownHandler::ConfirmShutdown(bool Interactive)
   if (Next && Delta <= Setup.MinEventTimeout * 60) {
      // Plugin wakeup within Min Event Timeout
      if (!Interactive)
-        return false;
-	  setIaMode(0);
-	  cDevice::PrimaryDevice()->SetTvSettings(0);
+	setIaMode(0);
+	cDevice::PrimaryDevice()->SetTvSettings(0);
+	return false;
      //cString buf = cString::sprintf(tr("Plugin %s wakes up in %ld min, continue?"), Plugin->Name(), Delta / 60);
      //if (!Interface->Confirm(buf))
      //   return false;
@@ -225,6 +225,7 @@ bool cShutdownHandler::ConfirmRestart(bool Interactive)
 
 bool cShutdownHandler::DoShutdown(bool Force)
 {
+  dsyslog("DEBUG: DoShutdown called");
   time_t Now = time(NULL);
   cTimer *timer = Timers.GetNextActiveTimer();
   cPlugin *Plugin = cPluginManager::GetNextWakeupPlugin();
