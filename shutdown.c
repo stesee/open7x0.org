@@ -110,9 +110,11 @@ void cShutdownHandler::CheckManualStart(int ManualStart)
      // Set inactive after MinUserInactivity
      SetUserInactiveTimeout();
      }
-  else
+  else {
      // Set inactive from now on
+     dsyslog("scheduled wakeup time in %ld minutes, assuming automatic start of VDR", Delta / 60);
      SetUserInactive();
+     }
 }
 
 void cShutdownHandler::SetShutdownCommand(const char *ShutdownCommand)
@@ -124,10 +126,15 @@ void cShutdownHandler::SetShutdownCommand(const char *ShutdownCommand)
 void cShutdownHandler::CallShutdownCommand(time_t WakeupTime, int Channel, const char *File, bool UserShutdown)
 {
   time_t Delta = WakeupTime ? WakeupTime - time(NULL) : 0;
-  cString cmd = cString::sprintf("%s %ld %ld %d \"%s\" %d", shutdownCommand, WakeupTime, Delta, Channel, *strescape(File, "\"$"), UserShutdown);
+  cString cmd = cString::sprintf("%s %ld %ld %d \"%s\" %d", shutdownCommand, WakeupTime, Delta, Channel, *strescape(File, "\\\"$"), UserShutdown);
   isyslog("executing '%s'", *cmd);
-  if (SystemExec(cmd, true) == 0)
+  int Status = SystemExec(cmd, true);
+  if (!WIFEXITED(Status) || WEXITSTATUS(Status))
+     esyslog("SystemExec() failed with status %d", Status);
+  else {
      Setup.NextWakeupTime = WakeupTime; // Remember this wakeup time for comparison on reboot
+     Setup.Save();
+     }
 }
 
 void cShutdownHandler::SetUserInactiveTimeout(int Seconds, bool Force)
