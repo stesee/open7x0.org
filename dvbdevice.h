@@ -29,7 +29,6 @@
 class cDvbTuner;
 //M7X0 BEGIN AK
 class c7x0TSBuffer;
-class c7x0Replayer;
 class c7x0TsReplayer;
 //M7X0 END AK
 /// The cDvbDevice implements a DVB device which can be accessed through the Linux DVB driver API.
@@ -152,8 +151,17 @@ public:
 // Player facilities
 
 private:
-  friend class c7x0Replayer;
-  c7x0Replayer *replayer;
+  int fd_playDvr;
+  int fd_playDemux[2];
+  int playTsCcounter[2];
+  int playAudioId;
+  bool playTrickSpeed;
+  // On PES packet can at max have 67116 Bytes in MPEG-TS
+  // For Trickspeed limit buffering of _one_ frame to 256KB
+  uchar playBuffer[KILOBYTE(256)];
+  int playBufferFill;
+  int PESPayload(const uchar *Data, int Length, int &TSOffset, int &TSLength);
+  void PESPacket2TS(const uchar *Data, int Length, int Pid, int &CCounter);
   friend class c7x0TsReplayer;
   c7x0TsReplayer *tsreplayer;
 //M7X0 END AK
@@ -166,7 +174,6 @@ protected:
 public:
   virtual int64_t GetSTC(void);
 //M7X0 BEGIN AK
-  virtual int PlayPes(const uchar *Data, int Length, bool VideoOnly);
   virtual int PlayTs(const uchar *Data, int Length);
   virtual void SetTsReplayPids(int pmtPid, int videoPid);
   virtual int GetTsReplayVideoPid(void);

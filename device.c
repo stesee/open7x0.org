@@ -22,120 +22,188 @@
 bool scanning_on_receiving_device = false;
 
 // --- cPesAssembler ---------------------------------------------------------
+//M7X0 BEGIN AK
+#define REPLAY_MAX_UNUSABLE_DATA KILOBYTE(512)
 
 class cPesAssembler {
 private:
-  uchar *data;
-  uint32_t tag;
-  int length;
-  int size;
-  bool Realloc(int Size);
+  uchar fragmentData[6 + 65535];
+  int fragmentLength;
+  const uchar *packetData;
+  int packetLength;
+  int streamId;
+  int skippedBytes;
+  uint32_t scanner;
+  bool initialSync;
+
+  bool ScanForStartCode(const uchar *&Data, int Length);
 public:
   cPesAssembler(void);
-  ~cPesAssembler();
-  int ExpectedLength(void) { return PacketSize(data); }
-  static int PacketSize(const uchar *data);
-  int Length(void) { return length; }
-  const uchar *Data(void) { return data; } // only valid if Length() >= 4
   void Reset(void);
-  void Put(uchar c);
-  void Put(const uchar *Data, int Length);
-  bool IsPes(void);
+  const uchar *Packet(int &Length) const;
+  int Put(const uchar *Data, int Length);
+  // This has not been implemented. What should it do?
+  // bool IsPes(void);
   };
 
 cPesAssembler::cPesAssembler(void)
 {
-  data = NULL;
-  size = 0;
   Reset();
-}
-
-cPesAssembler::~cPesAssembler()
-{
-  free(data);
 }
 
 void cPesAssembler::Reset(void)
 {
-  tag = 0xFFFFFFFF;
-  length = 0;
+  packetData = NULL;
+  packetLength = 0;
+  fragmentData[0] = fragmentData[1] = 0;
+  fragmentData[1] = 1;
+  fragmentLength = 0;
+  streamId = 0;
+  scanner = 0xFFFFFFFF;
+  skippedBytes = 0;
+  initialSync = true;
 }
 
-bool cPesAssembler::Realloc(int Size)
+const uchar *cPesAssembler::Packet(int &Length) const
 {
-  if (Size > size) {
-     size = max(Size, 2048);
-     data = (uchar *)realloc(data, size);
-     if (!data) {
-        esyslog("ERROR: can't allocate memory for PES assembler");
-        length = 0;
-        size = 0;
-        return false;
-        }
+  if (streamId != 0 & packetLength != 0 &
+        (fragmentLength == 0 | packetLength == fragmentLength)) {
+     Length = packetLength;
+     return (!fragmentLength ? packetData : fragmentData);
      }
-  return true;
+  return NULL;
 }
 
-void cPesAssembler::Put(uchar c)
+bool cPesAssembler::ScanForStartCode(const uchar *&Data,int Length)
 {
-  if (length < 4) {
-     tag = (tag << 8) | c;
-     if ((tag & 0xFFFFFF00) == 0x00000100) {
-        if (Realloc(4)) {
-           *(uint32_t *)data = htonl(tag);
-           length = 4;
+  register const uchar *data = Data;
+
+  // Normal case - No need to sync
+  // I think this hit in 99% of cases.
+  // If this hit, there cannot be a part startcode in scanner
+  // since data[0] is 0
+  if (Length >= 4 && (!(data[0] | data[1] | (data[2] - 1)) & data[3] >= 0xBA
+         & data[3] <= 0xEF)) {
+     scanner = 0xFFFFFFFF;
+     packetLength = 0;
+     streamId = data[3];
+     fragmentLength = 0;
+     return true;
+     }
+
+  for (int i = 0; i < 3 & i < Length ; i++) {
+      if ((scanner & 0xFFFFFF) == 0x000001 & data[i] >= 0xBA
+            & data[i] <= 0xEF) {
+         scanner = 0xFFFFFFFF;
+         packetLength = 0;
+         streamId = data[i];
+         fragmentLength = 3 - i;
+         skippedBytes -= 3 - i;
+         return true;
+         }
+      scanner = (scanner << 8) | data[i];
+      }
+
+  if (Length <= 3) {
+     skippedBytes += Length;
+     return false;
+     }
+
+  register const uchar *const limit = data + Length - 1;
+  data += 2;
+
+  while (data < limit)
+        if (data[0] > 1)
+           data += 3;
+        else if (!data[0])
+           data++;
+        else {
+           if (!(data[-2] | data[-1])) {
+              register const uchar code = *++data;
+              if (code >= 0xBA && code <= 0xEF) {
+                 scanner = 0xFFFFFFFF;
+                 packetLength = 0;
+                 streamId = code;
+                 fragmentLength = 0;
+                 skippedBytes += data - 3 - Data;
+                 Data = data - 3;
+                 return true;
+                 }
+              }
+           data += 3;
            }
-        }
-     else if (length < 3)
-        length++;
-     }
-  else if (Realloc(length + 1))
-     data[length++] = c;
+
+  scanner = BE2HOST(get_unaligned((uint32_t *)(limit - 3)));
+  skippedBytes += limit + 1 - Data;
+  return false;
 }
 
-void cPesAssembler::Put(const uchar *Data, int Length)
+int cPesAssembler::Put(const uchar *Data, int Length)
 {
-  while (length < 4 && Length > 0) {
-        Put(*Data++);
-        Length--;
-        }
-  if (Length && Realloc(length + Length)) {
-     memcpy(data + length, Data, Length);
-     length += Length;
+  const uchar *data = Data;
+
+  if (streamId != 0 & packetLength != 0 &
+        (fragmentLength == 0 | packetLength == fragmentLength)) {
+     streamId = 0;
      }
+
+  if (!streamId && !ScanForStartCode(data, Length)) {
+     if (skippedBytes >= REPLAY_MAX_UNUSABLE_DATA) {
+        esyslog("ERROR: %d bytes of recoding unusable - giving up!", skippedBytes);
+        errno = EDEADLK; // Any ideas for a better errorcode
+        return -1;
+        }
+     return Length;
+     }
+
+  if (skippedBytes) {
+     if (!initialSync) {
+        esyslog("WARNING: %d bytes of recoding unusable!", skippedBytes);
+        }
+     skippedBytes = 0;
+     initialSync = false;
+     }
+
+  Length -= data - Data;
+  if (!packetLength) {
+     if (fragmentLength + Length < 6) {
+        memcpy(fragmentData + fragmentLength, data, Length);
+        fragmentLength += Length;
+        return (data - Data + Length);
+        }
+
+     int b1 = fragmentLength < 5 ? data[4-fragmentLength] : fragmentData[4];
+
+     if (streamId != 0xBA) {
+        int b2 = fragmentLength < 6 ? data[5-fragmentLength] : fragmentData[5];
+        packetLength = 6 + ((b1 << 8) | b2);
+        }
+     else {
+        // Mpeg 1 / 2 Pack Headers have different length
+        if (b1 & 0xC0) { // MPEG2
+           if (fragmentLength + Length < 14) {
+              memcpy(fragmentData + fragmentLength, data, Length);
+              fragmentLength += Length;
+              return (data - Data + Length);
+              }
+           int b2 = fragmentLength < 14 ? data[13-fragmentLength] : fragmentData[13];
+           packetLength = 14 + (b2 & 0x7); // 14 + Stuffing length
+           }
+        else  // MPEG1
+           packetLength = 12;
+        }
+     }
+
+  if (fragmentLength != 0 | Length < packetLength) {
+     int bite = min(packetLength - fragmentLength, Length);
+     memcpy(fragmentData + fragmentLength, data, bite);
+     fragmentLength += bite;
+     return (data - Data + bite);
+     }
+  packetData = data;
+  return (data - Data + packetLength);
 }
-
-int cPesAssembler::PacketSize(const uchar *data)
-{
-  // we need atleast 6 bytes of data here !!!
-  switch (data[3]) {
-    default:
-    case 0x00 ... 0xB8: // video stream start codes
-    case 0xB9: // Program end
-    case 0xBC: // Programm stream map
-    case 0xF0 ... 0xFF: // reserved
-         return 6;
-
-    case 0xBA: // Pack header
-         if ((data[4] & 0xC0) == 0x40) // MPEG2
-            return 14;
-         // to be absolutely correct we would have to add the stuffing bytes
-         // as well, but at this point we only may have 6 bytes of data avail-
-         // able. So it's up to the higher level to resync...
-         //return 14 + (data[13] & 0x07); // add stuffing bytes
-         else // MPEG1
-            return 12;
-
-    case 0xBB: // System header
-    case 0xBD: // Private stream1
-    case 0xBE: // Padding stream
-    case 0xBF: // Private stream2 (navigation data)
-    case 0xC0 ... 0xCF: // all the rest (the real packets)
-    case 0xD0 ... 0xDF:
-    case 0xE0 ... 0xEF:
-         return 6 + data[4] * 256 + data[5];
-    }
-}
+//M7X0 END AK
 
 // --- cDevice ---------------------------------------------------------------
 
@@ -154,7 +222,7 @@ cDevice::cDevice(void)
   cardIndex = nextCardIndex++;
 
   SetDescription("receiver on device %d", CardIndex() + 1);
-  
+
   mute = false;
   volume = Setup.CurrentVolume;
 
@@ -1264,88 +1332,105 @@ int cDevice::PlayAudio(const uchar *Data, int Length, uchar Id)
 {
   return -1;
 }
-
+// M7X0 BEGIN AK
 int cDevice::PlayPesPacket(const uchar *Data, int Length, bool VideoOnly)
 {
-  cMutexLock MutexLock(&mutexCurrentAudioTrack);
-  bool FirstLoop = true;
-  uchar c = Data[3];
-  const uchar *Start = Data;
-  const uchar *End = Start + Length;
-  while (Start < End) {
-        int d = End - Start;
-        int w = d;
-        switch (c) {
-          case 0xBE:          // padding stream, needed for MPEG1
-          case 0xE0 ... 0xEF: // video
-               w = PlayVideo(Start, d);
-               break;
-          case 0xC0 ... 0xDF: // audio
-               SetAvailableTrack(ttAudio, c - 0xC0, c);
-               if (!VideoOnly && c == availableTracks[currentAudioTrack].id) {
-                  w = PlayAudio(Start, d, c);
-                  if (FirstLoop)
-                     Audios.PlayAudio(Data, Length, c);
-                  }
-               break;
-          case 0xBD: { // private stream 1
-               int PayloadOffset = Data[8] + 9;
-               uchar SubStreamId = Data[PayloadOffset];
-               uchar SubStreamType = SubStreamId & 0xF0;
-               uchar SubStreamIndex = SubStreamId & 0x1F;
+  const uchar streamId = Data[3];
+  int written = 0;
+  switch (streamId) {
+    case 0xBE:          // padding stream, needed for MPEG1
+    case 0xE0 ... 0xEF: // video
+         do {
+           int r = PlayVideo(Data + written, Length - written);
+           if (r >= 0)
+              written += r;
+           else
+              break;
+           } while (written < Length);
+         break;
+    case 0xC0 ... 0xDF: { // audio
+         SetAvailableTrack(ttAudio, streamId - 0xC0, streamId);
+         eTrackType caud = currentAudioTrack;
+         if (VideoOnly | streamId != availableTracks[caud].id) {
+            written = Length;
+            break;
+            }
 
-               // Compatibility mode for old VDR recordings, where 0xBD was only AC3:
-pre_1_3_19_PrivateStreamDeteced:
-               if (pre_1_3_19_PrivateStream) {
-                  SubStreamId = c;
-                  SubStreamType = 0x80;
-                  SubStreamIndex = 0;
-                  }
-               switch (SubStreamType) {
-                 case 0x20: // SPU
-                 case 0x30: // SPU
-                      break;
-                 case 0x80: // AC3 & DTS
-                      if (Setup.UseDolbyDigital) {
-                         SetAvailableTrack(ttDolby, SubStreamIndex, SubStreamId);
-                         if (!VideoOnly && SubStreamId == availableTracks[currentAudioTrack].id) {
-                            w = PlayAudio(Start, d, SubStreamId);
-                            if (FirstLoop)
-                               Audios.PlayAudio(Data, Length, SubStreamId);
-                            }
-                         }
-                      break;
-                 case 0xA0: // LPCM
-                      SetAvailableTrack(ttAudio, SubStreamIndex, SubStreamId);
-                      if (!VideoOnly && SubStreamId == availableTracks[currentAudioTrack].id) {
-                         w = PlayAudio(Start, d, SubStreamId);
-                         if (FirstLoop)
-                            Audios.PlayAudio(Data, Length, SubStreamId);
-                         }
-                      break;
-                 default:
-                      // Compatibility mode for old VDR recordings, where 0xBD was only AC3:
-                      if (!pre_1_3_19_PrivateStream) {
-                         dsyslog("switching to pre 1.3.19 Dolby Digital compatibility mode");
-                         ClrAvailableTracks();
-                         pre_1_3_19_PrivateStream = true;
-                         goto pre_1_3_19_PrivateStreamDeteced;
-                         }
-                 }
-               }
-               break;
-          default:
-               ;//esyslog("ERROR: unexpected packet id %02X", c);
-          }
-        if (w > 0)
-           Start += w;
-        else {
-           if (Start != Data)
-              esyslog("ERROR: incomplete PES packet write!");
-           return Start == Data ? w : Start - Data;
+         Audios.PlayAudio(Data, Length, streamId);
+         do {
+           int r = PlayAudio(Data + written, Length - written,streamId);
+           if (r >= 0)
+              written += r;
+           else
+              break;
+           } while (written < Length);
+         break;
+         }
+    case 0xBD: { // private stream 1
+         const int PayloadOffset = Data[8] + 9;
+         uchar SubStreamId = Data[PayloadOffset];
+         uchar SubStreamType = SubStreamId & 0xF0;
+         uchar SubStreamIndex = SubStreamId & 0x1F;
+         eTrackType thisTrack = ttNone;
+
+         if (pre_1_3_19_PrivateStream) {
+            SubStreamId = streamId;
+            SubStreamType = 0x80;
+            SubStreamIndex = 0;
+            }
+
+         switch (SubStreamType) {
+           case 0x20:
+           case 0x30: // SPU
+                break;
+           case 0x80:
+                if (Setup.UseDolbyDigital)
+                   thisTrack = ttDolby;
+                break;
+           case 0xA0:
+                thisTrack = ttAudio;
+                break;
+           default:
+                SubStreamId = streamId;
+                SubStreamType = 0x80;
+                SubStreamIndex = 0;
+                if (Setup.UseDolbyDigital)
+                   thisTrack = ttDolby;
+                dsyslog("switching to pre 1.3.19 Dolby Digital compatibility mode");
+                ClrAvailableTracks();
+                pre_1_3_19_PrivateStream = true;
            }
-        FirstLoop = false;
+         if (thisTrack == ttNone) {
+            written = Length;
+            break;
+            }
+         SetAvailableTrack(thisTrack, SubStreamIndex, SubStreamId);
+         eTrackType caud = currentAudioTrack;
+         if (VideoOnly | SubStreamId != availableTracks[caud].id) {
+            written = Length;
+            break;
+            }
+
+         Audios.PlayAudio(Data, Length, SubStreamId);
+         do {
+           int r = PlayAudio(Data + written, Length - written, SubStreamId);
+           if (r >= 0)
+              written += r;
+           else
+              break;
+           } while (written < Length);
+         break;
+         }
+    default:
+         written = Length;
+    }
+
+  if (written != Length) {
+     if (written) {
+        esyslog("ERROR: incomplete PES packet write!");
         }
+     return -1;
+     }
   return Length;
 }
 
@@ -1355,52 +1440,28 @@ int cDevice::PlayPes(const uchar *Data, int Length, bool VideoOnly)
      pesAssembler->Reset();
      return 0;
      }
+
   int Result = 0;
-  if (pesAssembler->Length()) {
-     // Make sure we have a complete PES header:
-     while (pesAssembler->Length() < 6 && Length > 0) {
-           pesAssembler->Put(*Data++);
-           Length--;
-           Result++;
-           }
-     if (pesAssembler->Length() < 6)
-        return Result; // Still no complete PES header - wait for more
-     int l = pesAssembler->ExpectedLength();
-     int Rest = min(l - pesAssembler->Length(), Length);
-     pesAssembler->Put(Data, Rest);
-     Data += Rest;
-     Length -= Rest;
-     Result += Rest;
-     if (pesAssembler->Length() < l)
-        return Result; // Still no complete PES packet - wait for more
-     // Now pesAssembler contains one complete PES packet.
-     int w = PlayPesPacket(pesAssembler->Data(), pesAssembler->Length(), VideoOnly);
-     if (w > 0)
-        pesAssembler->Reset();
-     return Result > 0 ? Result : w < 0 ? w : 0;
-     }
-  int i = 0;
-  while (i <= Length - 6) {
-        if (Data[i] == 0x00 && Data[i + 1] == 0x00 && Data[i + 2] == 0x01) {
-           int l = cPesAssembler::PacketSize(&Data[i]);
-           if (i + l > Length) {
-              // Store incomplete PES packet for later completion:
-              pesAssembler->Put(Data + i, Length - i);
-              return Length;
-              }
-           int w = PlayPesPacket(Data + i, l, VideoOnly);
-           if (w > 0)
-              i += l;
-           else
-              return i == 0 ? w : i;
-           }
-        else
-           i++;
+  while (Length > 0) {
+        int used = pesAssembler->Put(Data,Length);
+        if (used < 0)
+           return used;
+        Length -= used;
+        Result += used;
+        Data += used;
+
+        int pLength;
+        const uchar *pData = pesAssembler->Packet(pLength);
+        if (!pData)
+           continue;
+
+        int w = PlayPesPacket(pData, pLength, VideoOnly);
+        if (w < 0)
+           return w;
         }
-  if (i < Length)
-     pesAssembler->Put(Data + i, Length - i);
-  return Length;
+  return Result;
 }
+// M7X0 END AK
 
 int cDevice::Ca(void) const
 {
