@@ -1311,7 +1311,7 @@ int main(int argc, char *argv[])
                if (ShutdownHandler.ConfirmShutdown(false) && !Setup.HotStandby)
                   // Time to shut down - start final countdown:
                   ShutdownHandler.countdown.Start(tr("VDR will shut down in %s minutes"), SHUTDOWNWAIT); // the placeholder is really %s!
-		else
+		else if (getIaMode())
 		  ShutdownHandler.countdown.Start(tr("VDR will go in HotStandby in %s minutes"), SHUTDOWNWAIT);
                // Dont try to shut down again for a while:
                ShutdownHandler.SetRetry(SHUTDOWNRETRY);
