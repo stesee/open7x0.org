@@ -256,7 +256,7 @@ public:
   cReadDir(const char *Directory);
   ~cReadDir();
 //M7X0 BEGIN AK
-  void cReadDir::Close(void);
+  void Close(void);
 //M7X0 End AK
   bool Ok(void) { return directory != NULL; }
   struct dirent *Next(void);
