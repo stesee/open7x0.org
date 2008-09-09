@@ -3892,17 +3892,20 @@ int cDvbDevice::PlayAudioOnly(const uchar *Data, int Length, uchar Id)
      playAudioId = Id;
      }
 
-  if ((Id & 0xf0) == 0xa0)
+  int min_playsize = Length - pay_off;
+  if ((Id & 0xf0) == 0xa0) {
      pay_off += 7;
+     min_playsize = 48 * 1024;
+     }
 
-  if (pay_off >= Length) {
+  const uchar *write_data = Data + pay_off;
+  int write_length = Length - pay_off;
+  if (write_length <= 0) {
      esyslog("Invalid audio packet");
      errno = EINVAL;
      return -1;
   }
 
-  const uchar *write_data = Data + pay_off;
-  int write_length = Length - pay_off;
   void *(*fp_memcpy)(void *,const void *, size_t) = &memcpy;
   if (playBufferFill) {
      if (playBufferFill + write_length > KILOBYTE(2*65)) {
@@ -3917,19 +3920,22 @@ int cDvbDevice::PlayAudioOnly(const uchar *Data, int Length, uchar Id)
      fp_memcpy = &memmove;
      }
 
-
-  do {
-     int r = write(fd_audio, write_data, write_length);
-     if (r < 0) {
-        if ((errno == EAGAIN) | (errno == EINTR))
-           continue;
-        if (errno == EBUSY)
+  while (write_length >= min_playsize) {
+        int r = write(fd_audio, write_data, write_length);
+        if (r < 0) {
+           if ((errno == EAGAIN) | (errno == EINTR))
+              continue;
+           /* Driver returns EPERM if write array too small
+            * yet another ugly bug */
+           if ((errno == EBUSY) | (errno == EPERM))
+              break;
+           return -1;
+           }
+        if (r == 0)
            break;
-        return -1;
+        write_data += r;
+        write_length -= r;
         }
-     write_data += r;
-     write_length -= r;
-     } while (write_length > 0);
 
   playBufferFill = write_length;
   if ((write_length > 0) & (write_data != playBuffer)) {
