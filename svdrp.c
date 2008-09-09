@@ -421,7 +421,7 @@ void cSVDRP::Reply(int Code, const char *fmt, ...)
         while (s && *s) {
               const char *n = strchr(s, '\n');
               char cont = ' ';
-              if (Code < 0 || n && *(n + 1)) // trailing newlines don't count!
+              if (Code < 0 || (n && *(n + 1))) // trailing newlines don't count!
                  cont = '-';
               char number[16];
               sprintf(number, "%03d%c", abs(Code), cont);

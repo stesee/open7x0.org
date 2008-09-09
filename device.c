@@ -66,8 +66,8 @@ void cPesAssembler::Reset(void)
 
 const uchar *cPesAssembler::Packet(int &Length) const
 {
-  if (streamId != 0 & packetLength != 0 &
-        (fragmentLength == 0 | packetLength == fragmentLength)) {
+  if ((streamId != 0) & (packetLength != 0) &
+        ((fragmentLength == 0) | (packetLength == fragmentLength))) {
      Length = packetLength;
      return (!fragmentLength ? packetData : fragmentData);
      }
@@ -82,8 +82,8 @@ bool cPesAssembler::ScanForStartCode(const uchar *&Data,int Length)
   // I think this hit in 99% of cases.
   // If this hit, there cannot be a part startcode in scanner
   // since data[0] is 0
-  if (Length >= 4 && (!(data[0] | data[1] | (data[2] - 1)) & data[3] >= 0xBA
-         & data[3] <= 0xEF)) {
+  if (Length >= 4 && (!(data[0] | data[1] | (data[2] - 1)) & (data[3] >= 0xBA)
+         & (data[3] <= 0xEF))) {
      scanner = 0xFFFFFFFF;
      packetLength = 0;
      streamId = data[3];
@@ -91,9 +91,9 @@ bool cPesAssembler::ScanForStartCode(const uchar *&Data,int Length)
      return true;
      }
 
-  for (int i = 0; i < 3 & i < Length ; i++) {
-      if ((scanner & 0xFFFFFF) == 0x000001 & data[i] >= 0xBA
-            & data[i] <= 0xEF) {
+  for (int i = 0; (i < 3) & (i < Length); i++) {
+      if (((scanner & 0xFFFFFF) == 0x000001) & (data[i] >= 0xBA)
+            & (data[i] <= 0xEF)) {
          scanner = 0xFFFFFFFF;
          packetLength = 0;
          streamId = data[i];
@@ -142,8 +142,8 @@ int cPesAssembler::Put(const uchar *Data, int Length)
 {
   const uchar *data = Data;
 
-  if (streamId != 0 & packetLength != 0 &
-        (fragmentLength == 0 | packetLength == fragmentLength)) {
+  if ((streamId != 0) & (packetLength != 0) &
+        ((fragmentLength == 0) | (packetLength == fragmentLength))) {
      streamId = 0;
      }
 
@@ -194,7 +194,7 @@ int cPesAssembler::Put(const uchar *Data, int Length)
         }
      }
 
-  if (fragmentLength != 0 | Length < packetLength) {
+  if ((fragmentLength != 0) | (Length < packetLength)) {
      int bite = min(packetLength - fragmentLength, Length);
      memcpy(fragmentData + fragmentLength, data, bite);
      fragmentLength += bite;
@@ -1038,7 +1038,7 @@ bool cDevice::HasLock(int TimeoutMs)
 bool cDevice::HasProgramme(void)
 {
 //M7X0 BEGIN AK
-  return Replaying() || (pidHandles[ptAudio].pid || pidHandles[ptVideo].pid) && IsPrimaryDevice();
+  return Replaying() || ((pidHandles[ptAudio].pid || pidHandles[ptVideo].pid) && IsPrimaryDevice());
 //M7X0 END AK
 }
 
@@ -1128,8 +1128,8 @@ void cDevice::ClrAvailableTracks(bool DescriptionsOnly, bool IdsOnly)
 bool cDevice::SetAvailableTrack(eTrackType Type, int Index, uint16_t Id, const char *Language, const char *Description)
 {
   eTrackType t = eTrackType(Type + Index);
-  if (Type == ttAudio && IS_AUDIO_TRACK(t) ||
-      Type == ttDolby && IS_DOLBY_TRACK(t)) {
+  if ((Type == ttAudio && IS_AUDIO_TRACK(t)) ||
+      (Type == ttDolby && IS_DOLBY_TRACK(t))) {
      if (Language)
         strn0cpy(availableTracks[t].language, Language, sizeof(availableTracks[t].language));
      if (Description)
@@ -1351,7 +1351,7 @@ int cDevice::PlayPesPacket(const uchar *Data, int Length, bool VideoOnly)
     case 0xC0 ... 0xDF: { // audio
          SetAvailableTrack(ttAudio, streamId - 0xC0, streamId);
          eTrackType caud = currentAudioTrack;
-         if (VideoOnly | streamId != availableTracks[caud].id) {
+         if (VideoOnly | (streamId != availableTracks[caud].id)) {
             written = Length;
             break;
             }
@@ -1406,7 +1406,7 @@ int cDevice::PlayPesPacket(const uchar *Data, int Length, bool VideoOnly)
             }
          SetAvailableTrack(thisTrack, SubStreamIndex, SubStreamId);
          eTrackType caud = currentAudioTrack;
-         if (VideoOnly | SubStreamId != availableTracks[caud].id) {
+         if (VideoOnly | (SubStreamId != availableTracks[caud].id)) {
             written = Length;
             break;
             }

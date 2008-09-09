@@ -257,7 +257,7 @@ void cRcuRemote::SetNumber(int n, bool Hex)
   data = m;
 }
 
-void cRcuRemote::SetString(char *s)
+void cRcuRemote::SetString(const char *s)
 {
   const char *chars = mode == modeH ? "0123456789ABCDEF" : "0123456789-EHLP ";
   int n = 0;

@@ -1469,7 +1469,7 @@ int cIndexFile::Get(uchar FileNumber, int FileOffset)
      //TODO implement binary search!
      int i;
      for (i = 0; i < last; i++) {
-         if (index[i].number > FileNumber || (index[i].number == FileNumber) && index[i].offset >= FileOffset)
+         if (index[i].number > FileNumber || ((index[i].number == FileNumber) && index[i].offset >= FileOffset))
             break;
          }
      return i;

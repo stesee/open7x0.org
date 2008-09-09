@@ -101,7 +101,7 @@ bool cSVDRPhost::Parse(const char *s)
   if (p) {
      char *error = NULL;
      int m = strtoul(p + 1, &error, 10);
-     if (error && *error && !isspace(*error) || m > 32)
+     if ((error && *error && !isspace(*error)) || m > 32)
         return false;
      *(char *)p = 0; // yes, we know it's 'const' - will be restored!
      if (m == 0)

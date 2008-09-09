@@ -1329,7 +1329,7 @@ bool c7x0TsReplayer::HandlePesTrickspeed(const uchar *&Data,
         }
      }
 
-  if ((pesHeader[0] | pesHeader[1] | pesHeader[2] -1) ||
+  if ((pesHeader[0] | pesHeader[1] | (pesHeader[2] - 1)) ||
         (pesHeader[3] != 0xBE && (pesHeader[3] & 0xF0) != 0xE0)) {
      esyslog("c7x0TsReplayer: Illegal PES-Packet in Video-Stream for trick speed");
      pesHeaderLength = 0;
@@ -2702,7 +2702,7 @@ void cDvbDevice::SetTvSettings(bool settv){
         esyslog("m7x0 can not open /dev/avswitch");
       CHECK(ioctl(avs, AVSWCMD_TV_OFF, 0));
       CHECK(ioctl(avs, AVSWCMD_TV_VCR, 0));
-      close(avs);   
+      close(avs);
     }
 }
 
@@ -2711,7 +2711,7 @@ void cDvbDevice::SetTvMode(bool tvmode){
     dsyslog("DEBUG: set tv mode -> %d", tvmode);
     if(getIaMode()){
     int avs = open("/dev/avswitch", O_WRONLY);
-      if(avs== -1) 
+      if(avs== -1)
         esyslog("m7x0 can not open /dev/avswitch");
       if(tvmode){
 	  CHECK(ioctl(avs, AVSWCMD_TV_SVIDEO, 0));
@@ -2726,7 +2726,7 @@ void cDvbDevice::SetTvMode(bool tvmode){
 void cDvbDevice::SetVCRMode(bool vcrmode){
     dsyslog("DEBUG: set vcr mode -> %d", vcrmode);
     int avs = open("/dev/avswitch", O_WRONLY);
-    if(avs== -1) 
+    if(avs== -1)
       esyslog("m7x0 can not open /dev/avswitch");
     if(vcrmode){
 	CHECK(ioctl(avs, AVSWCMD_VCR_SVIDEO, 0));
@@ -2958,9 +2958,9 @@ bool cDvbDevice::ProvidesSource(int Source) const
 {
   int type = Source & cSource::st_Mask;
   return type == cSource::stNone
-      || type == cSource::stCable && frontendType == FE_QAM
-      || type == cSource::stSat   && frontendType == FE_QPSK
-      || type == cSource::stTerr  && frontendType == FE_OFDM;
+      || (type == cSource::stCable && frontendType == FE_QAM)
+      || (type == cSource::stSat   && frontendType == FE_QPSK)
+      || (type == cSource::stTerr  && frontendType == FE_OFDM);
 }
 
 bool cDvbDevice::ProvidesTransponder(const cChannel *Channel) const
@@ -2979,7 +2979,7 @@ bool cDvbDevice::ProvidesChannel(const cChannel *Channel, int Priority, bool *Ne
      if (Priority >= 0 && Receiving(true)) {
         if (dvbTuner->IsTunedTo(Channel) && (forTransferer || FreeReceiverSlot())) {
 //M7X0 END AK
-           if (Channel->Vpid() && !HasPid(Channel->Vpid()) || Channel->Apid(0) && !HasPid(Channel->Apid(0))) {
+           if ((Channel->Vpid() && !HasPid(Channel->Vpid())) || (Channel->Apid(0) && !HasPid(Channel->Apid(0)))) {
 #ifdef DO_MULTIPLE_RECORDINGS
 #ifndef DO_MULTIPLE_CA_CHANNELS
               if (Ca() >= CA_ENCRYPTED_MIN || Channel->Ca() >= CA_ENCRYPTED_MIN)
@@ -3025,8 +3025,8 @@ bool cDvbDevice::SetChannelDevice(const cChannel *Channel, bool LiveView)
 
   bool TurnOnLivePIDs = HasDecoder() && LiveView;
 
-  bool DoBlank = LiveView && !pidHandles[ptVideo].pid && Channel->Vpid() ||
-                 pidHandles[ptVideo].pid && (!LiveView || !Channel->Vpid());
+  bool DoBlank = (LiveView && !pidHandles[ptVideo].pid && Channel->Vpid()) ||
+                 (pidHandles[ptVideo].pid && (!LiveView || !Channel->Vpid()));
 
 
 #ifndef DO_MULTIPLE_RECORDINGS
@@ -3306,7 +3306,7 @@ bool cDvbDevice::SetPlayMode(ePlayMode PlayMode)
             else
                errnoSave = 0;
             i++;
-            } while (errnoSave == EBUSY & i <= 100);
+            } while ((errnoSave == EBUSY) & (i <= 100));
 
          if (errnoSave) {
             close(fd_playDemux[0]);
@@ -3361,8 +3361,8 @@ bool cDvbDevice::SetPlayMode(ePlayMode PlayMode)
             fd_playDvr = -1;
             }
          DoBlank = !tsreplayer &&
-           (!pidHandles[cDevice::ptVideo].pid && PlayMode == pmTsAudioVideo ||
-            pidHandles[cDevice::ptVideo].pid && PlayMode != pmTsAudioVideo);
+           ((!pidHandles[cDevice::ptVideo].pid && PlayMode == pmTsAudioVideo) ||
+            (pidHandles[cDevice::ptVideo].pid && PlayMode != pmTsAudioVideo));
          TurnOffLiveMode(true, DoBlank);
          CHECK(ioctl(fd_audio, AUDIO_STOP,0));
          CHECK(ioctl(fd_video, VIDEO_STOP, 1));
@@ -3755,8 +3755,8 @@ int cDvbDevice::PlayVideo(const uchar *Data, int Length)
   int pay_off = PESPayload(Data,Length,t1,t2);
   int pay_length = Length - pay_off;
   const uchar *p = Data + pay_off;
-  if ((p[0] | p[1] | (p[2] - 1)) == 0 &
-        (p[3] == 0x00 | p[3] == 0xB3 | p[3] == 0xB8)) {
+  if (((p[0] | p[1] | (p[2] - 1)) == 0) &
+        ((p[3] == 0x00) | (p[3] == 0xB3) | (p[3] == 0xB8))) {
      if (playBufferFill > 0) {
         int r = safe_write(fd_video, playBuffer, playBufferFill);
         if (r < 0)
@@ -3807,7 +3807,7 @@ int cDvbDevice::PlayAudio(const uchar *Data, int Length, uchar Id)
         playTsCcounter[1]        = 0;
         playAudioId              = Id;
         pesFilterParams.input    = DMX_IN_DVR;
-        pesFilterParams.output   = ((Id & 0xF0) == 0x80 | Id == 0xBD) ?
+        pesFilterParams.output   = (((Id & 0xF0) == 0x80) | (Id == 0xBD)) ?
                                    DMX_OUT_DECODER1 : DMX_OUT_DECODER0;
         pesFilterParams.pes_type = DMX_PES_AUDIO;
         pesFilterParams.flags    = DMX_IMMEDIATE_START;
@@ -3822,7 +3822,7 @@ int cDvbDevice::PlayAudio(const uchar *Data, int Length, uchar Id)
            else
               errnoSave = 0;
            i++;
-           } while (errnoSave == EBUSY & i <= 100);
+           } while ((errnoSave == EBUSY) & (i <= 100));
 
         if (errnoSave)
            return -1;

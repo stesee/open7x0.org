@@ -55,7 +55,7 @@ eKeys cInterface::Wait(int Seconds, bool KeepChar)
       if (ISRAWKEY(Key) || time(NULL) > timeout || interrupted)
          break;
       }
-  if (KeepChar && ISRAWKEY(Key) || Key == k_Plugin)
+  if ((KeepChar && ISRAWKEY(Key)) || Key == k_Plugin)
      cRemote::Put(Key);
   interrupted = false;
   return Key;

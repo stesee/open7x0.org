@@ -323,10 +323,10 @@ void cRepacker::HandleInputPesData(uchar *Data, int Count, const bool PacketStar
 
      if (Count >= 7) {
         const int sid = Data[3];
-        if ((Data[0] | Data[1] | Data[2] - 1) ||
-            streamType == VIDEO_STREAM_S && (sid & 0xF0) != VIDEO_STREAM_S ||
-            streamType == AUDIO_STREAM_S && (sid & 0xE0) != AUDIO_STREAM_S ||
-            streamType == PRIVATE_STREAM1 && sid != PRIVATE_STREAM1) {
+        if ((Data[0] | Data[1] | (Data[2] - 1)) ||
+            (streamType == VIDEO_STREAM_S && (sid & 0xF0) != VIDEO_STREAM_S) ||
+            (streamType == AUDIO_STREAM_S && (sid & 0xE0) != AUDIO_STREAM_S) ||
+            (streamType == PRIVATE_STREAM1 && sid != PRIVATE_STREAM1)) {
            esyslog("PES packet not starting or wrong type (0x%d) in stream 0x%hhX", sid, streamId);
            inputPacketIllegal = true;
            return;
@@ -384,10 +384,10 @@ void cRepacker::HandleInputPesData(uchar *Data, int Count, const bool PacketStar
 
 
   const int sid = inputPesHeaderBackup[3];
-  if ((inputPesHeaderBackup[0] | inputPesHeaderBackup[1] | inputPesHeaderBackup[2] - 1) ||
-      streamType == VIDEO_STREAM_S && (sid & 0xF0) != VIDEO_STREAM_S ||
-      streamType == AUDIO_STREAM_S && (sid & 0xE0) != AUDIO_STREAM_S ||
-      streamType == PRIVATE_STREAM1 && sid != PRIVATE_STREAM1) {
+  if ((inputPesHeaderBackup[0] | inputPesHeaderBackup[1] | (inputPesHeaderBackup[2] - 1)) ||
+      (streamType == VIDEO_STREAM_S && (sid & 0xF0) != VIDEO_STREAM_S) ||
+      (streamType == AUDIO_STREAM_S && (sid & 0xE0) != AUDIO_STREAM_S) ||
+      (streamType == PRIVATE_STREAM1 && sid != PRIVATE_STREAM1)) {
      esyslog("PES packet not starting or wrong type (0x%d) in stream 0x%hhX", sid, streamId);
      inputPacketIllegal = true;
      inputPesHeaderBackupLen = 0;

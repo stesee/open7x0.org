@@ -314,7 +314,7 @@ int main(int argc, char *argv[])
 		      }else{
 		        setIaMode(1);
 			break;
-			} 
+			}
 		    }
           case 'l': {
                       char *p = strchr(optarg, '.');
@@ -506,9 +506,9 @@ int main(int argc, char *argv[])
 
   // Check for UTF-8 and exit if present - asprintf() will fail if it encounters 8 bit ASCII codes
   char *LangEnv;
-  if ((LangEnv = getenv("LANG"))     != NULL && strcasestr(LangEnv, "utf") ||
-      (LangEnv = getenv("LC_ALL"))   != NULL && strcasestr(LangEnv, "utf") ||
-      (LangEnv = getenv("LC_CTYPE")) != NULL && strcasestr(LangEnv, "utf")) {
+  if (((LangEnv = getenv("LANG"))     != NULL && strcasestr(LangEnv, "utf")) ||
+      ((LangEnv = getenv("LC_ALL"))   != NULL && strcasestr(LangEnv, "utf")) ||
+      ((LangEnv = getenv("LC_CTYPE")) != NULL && strcasestr(LangEnv, "utf"))) {
      fprintf(stderr, "vdr: please turn off UTF-8 before starting VDR\n");
      return 2;
      }
@@ -676,7 +676,7 @@ int main(int argc, char *argv[])
            }
         }
      }
-     
+
      if(!getIaMode())
         cDevice::PrimaryDevice()->SetTvSettings(0);
 
@@ -703,7 +703,7 @@ int main(int argc, char *argv[])
 
   // Set skin and theme in case they're implemented by a plugin:
 
-  if (!CurrentSkin || CurrentSkin == Skins.Current() && strcmp(Skins.Current()->Name(), Setup.OSDSkin) != 0) {
+  if (!CurrentSkin || (CurrentSkin == Skins.Current() && strcmp(Skins.Current()->Name(), Setup.OSDSkin) != 0)) {
      Skins.SetCurrent(Setup.OSDSkin);
      cThemes::Load(Skins.Current()->Name(), Setup.OSDTheme, Skins.Current()->Theme());
      }
@@ -805,7 +805,7 @@ int main(int argc, char *argv[])
               ChannelSaveTimeout = 1; // triggers an immediate save
            else if (modified && !ChannelSaveTimeout)
               ChannelSaveTimeout = time(NULL) + CHANNELSAVEDELTA;
-           bool timeout = ChannelSaveTimeout == 1 || ChannelSaveTimeout && time(NULL) > ChannelSaveTimeout && !cRecordControls::Active();
+           bool timeout = ChannelSaveTimeout == 1 || (ChannelSaveTimeout && time(NULL) > ChannelSaveTimeout && !cRecordControls::Active());
            if ((modified || timeout) && Channels.Lock(false, 100)) {
               if (timeout) {
                  Channels.Save();
@@ -961,10 +961,10 @@ int main(int argc, char *argv[])
            // Set user active for MinUserInactivity time in the future:
            ShutdownHandler.SetUserInactiveTimeout();
            }
-	   	
+
 	// m7x0 HotStanby and iaMode
 	if (!getIaMode()) {
-	   if (NORMALKEY(key) != kPower) { 
+	   if (NORMALKEY(key) != kPower) {
 	      key = kNone;
 	   }else{
 	      dsyslog("DEBUG: wakeup from IaMode");
@@ -973,7 +973,7 @@ int main(int argc, char *argv[])
 	      key = kNone;
 	   }
 	}
-	
+
         // Keys that must work independent of any interactive mode:
         switch (key) {
           // Menu control:
@@ -989,7 +989,7 @@ int main(int argc, char *argv[])
                   else
                      WasOpen = false;
                   }
-               if (!WasOpen || !WasMenu && !Setup.MenuButtonCloses)
+               if (!WasOpen || (!WasMenu && !Setup.MenuButtonCloses))
                   Menu = new cMenuMain;
                }
                break;
@@ -1142,7 +1142,7 @@ int main(int argc, char *argv[])
                 //if (!ShutdownHandler.ConfirmShutdown(false) && Skins.Message(mtWarning, tr("VDR will shut down later - press Power to force"), SHUTDOWNFORCEPROMPT) != kPower) {
                 if (!ShutdownHandler.ConfirmShutdown(false)){
 		   setIaMode(0);
-		   cDevice::PrimaryDevice()->SetTvSettings(0);	 
+		   cDevice::PrimaryDevice()->SetTvSettings(0);
 		   // Not pressed power - set VDR to be non-interactive and power down later:
                    ShutdownHandler.SetUserInactive();
                    break;
@@ -1239,7 +1239,7 @@ int main(int argc, char *argv[])
              // Toggle channels:
              case kChanPrev:
              case k0: {
-                  if (PreviousChannel[PreviousChannelIndex ^ 1] == LastChannel || LastChannel != PreviousChannel[0] && LastChannel != PreviousChannel[1])
+                  if (PreviousChannel[PreviousChannelIndex ^ 1] == LastChannel || (LastChannel != PreviousChannel[0] && LastChannel != PreviousChannel[1]))
                      PreviousChannelIndex ^= 1;
                   Channels.SwitchTo(PreviousChannel[PreviousChannelIndex ^= 1]);
                   break;
@@ -1294,16 +1294,16 @@ int main(int argc, char *argv[])
                EXIT(1);
             LastSignal = 0;
             }
- 
+
          // Update the shutdown countdown:
          if (ShutdownHandler.countdown && ShutdownHandler.countdown.Update()) {
             if (!ShutdownHandler.ConfirmShutdown(false))
                ShutdownHandler.countdown.Cancel();
             }
- 
+
          if (!Interact && !cRecordControls::Active() && !cCutter::Active() && !Interface->HasSVDRPConnection() && (time(NULL) - cRemote::LastActivity()) > ACTIVITYTIMEOUT) {
             // Handle housekeeping tasks
- 
+
             // Shutdown:
             // Check whether VDR will be ready for shutdown in SHUTDOWNWAIT seconds:
             time_t Soon = time(NULL) + SHUTDOWNWAIT;
@@ -1332,14 +1332,14 @@ int main(int argc, char *argv[])
 		    }
 		}
 		}
- 
+
             // Disk housekeeping:
             RemoveDeletedRecordings();
             cSchedules::Cleanup();
             // Plugins housekeeping:
             PluginManager.Housekeeping();
             }
- 
+
          // Main thread hooks of plugins:
          PluginManager.MainThreadHook();
 	 //m7x0 auto aspect
@@ -1347,7 +1347,7 @@ int main(int argc, char *argv[])
 	 if(eVideoFormat(Setup.VideoFormat)==2)
 	    cDevice::PrimaryDevice()->CheckStreamAspect(0);
          }
- 
+
    if (ShutdownHandler.EmergencyExitRequested())
       esyslog("emergency exit requested - shutting down");
 

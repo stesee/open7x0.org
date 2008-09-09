@@ -300,7 +300,7 @@ void cSkinSTTNGDisplayChannel::Flush(void)
         osd->DrawText(x4 - w - 2, y7 - font->Height(date), date, Theme.Color(clrChannelDate), frameColor, font);
         cDevice *Device = cDevice::PrimaryDevice();
         const tTrackId *Track = Device->GetTrack(Device->GetCurrentAudioTrack());
-        if (!Track && *lastTrackId.description || Track && strcmp(lastTrackId.description, Track->description)) {
+        if ((!Track && *lastTrackId.description) || (Track && strcmp(lastTrackId.description, Track->description))) {
            osd->DrawText(x3 + 2, y6, Track ? Track->description : "", Theme.Color(clrChannelName), frameColor, font, x4 - x3 - w - 4);
            strn0cpy(lastTrackId.description, Track ? Track->description : "", sizeof(lastTrackId.description));
            }

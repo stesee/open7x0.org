@@ -61,7 +61,7 @@ void cExternalAudio::Play(const uchar *Data, int Length, uchar Id)
 {
   if (command && !mute) {
      if (pipe || pipe.Open(command, "w")) {
-        if (0x80 <= Id && Id <= 0x87 || Id == 0xBD) { // AC3
+        if ((0x80 <= Id && Id <= 0x87) || Id == 0xBD) { // AC3
            cDvbDevice::SetTransferModeForDolbyDigital(2);
            int written = Data[8] + 9; // skips the PES header
            if (Id != 0xBD)

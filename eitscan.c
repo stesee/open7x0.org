@@ -167,7 +167,7 @@ void cEITScanner::Process(void)
                             if (Device->ProvidesTransponder(Channel)) {
                                if (!Device->Receiving()) {
                                   bool MaySwitchTransponder = Device->MaySwitchTransponder();
-                                  if (MaySwitchTransponder || Device->ProvidesTransponderExclusively(Channel) && now - lastActivity > Setup.EPGScanTimeout * 3600) {
+                                  if (MaySwitchTransponder || (Device->ProvidesTransponderExclusively(Channel) && now - lastActivity > Setup.EPGScanTimeout * 3600)) {
                                      if (!MaySwitchTransponder) {
                                         if (Device == cDevice::ActualDevice() && !currentChannel) {
                                            cDevice::PrimaryDevice()->StopReplay(); // stop transfer mode

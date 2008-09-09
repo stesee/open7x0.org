@@ -420,7 +420,7 @@ void cMenuChannels::Setup(void)
   cMenuChannelItem *currentItem = NULL;
   Clear();
   for (cChannel *channel = Channels.First(); channel; channel = Channels.Next(channel)) {
-      if (!channel->GroupSep() || cMenuChannelItem::SortMode() == cMenuChannelItem::csmNumber && *channel->Name()) {
+      if (!channel->GroupSep() || (cMenuChannelItem::SortMode() == cMenuChannelItem::csmNumber && *channel->Name())) {
          cMenuChannelItem *item = new cMenuChannelItem(channel);
          Add(item);
          if (channel == currentChannel)
@@ -1041,7 +1041,7 @@ int cMenuScheduleItem::Compare(const cListObject &ListObject) const
   return r;
 }
 
-static char *TimerMatchChars = " tT";
+static const char *TimerMatchChars = " tT";
 
 bool cMenuScheduleItem::Update(bool Force)
 {
@@ -4027,7 +4027,7 @@ void cReplayControl::Hide(void)
 
 void cReplayControl::ShowMode(void)
 {
-  if (visible || Setup.ShowReplayMode && !cOsd::IsOpen()) {
+  if (visible || (Setup.ShowReplayMode && !cOsd::IsOpen())) {
      bool Play, Forward;
      int Speed;
      if (GetReplayMode(Play, Forward, Speed) && (!visible || Play != lastPlay || Forward != lastForward || Speed != lastSpeed)) {

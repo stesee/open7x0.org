@@ -186,7 +186,7 @@ bool cTimer::ParseDay(const char *s, time_t &Day, int &WeekDays)
         // handle "day of month" for compatibility with older versions:
         char *tail = NULL;
         int day = strtol(d, &tail, 10);
-        if (tail && *tail || day < 1 || day > 31)
+        if ((tail && *tail) || day < 1 || day > 31)
            return false;
         time_t t = time(NULL);
         int DaysToCheck = 61; // 61 to handle months with 31/30/31
@@ -613,7 +613,7 @@ cTimer *cTimers::GetTimer(cTimer *Timer)
 {
   for (cTimer *ti = First(); ti; ti = Next(ti)) {
       if (ti->Channel() == Timer->Channel() &&
-          (ti->WeekDays() && ti->WeekDays() == Timer->WeekDays() || !ti->WeekDays() && ti->Day() == Timer->Day()) &&
+          ((ti->WeekDays() && ti->WeekDays() == Timer->WeekDays()) || (!ti->WeekDays() && ti->Day() == Timer->Day())) &&
           ti->Start() == Timer->Start() &&
           ti->Stop() == Timer->Stop())
          return ti;
@@ -665,7 +665,7 @@ cTimer *cTimers::GetNextActiveTimer(void)
   cTimer *t0 = NULL;
   for (cTimer *ti = First(); ti; ti = Next(ti)) {
       ti->Matches();
-      if ((ti->HasFlags(tfActive)) && (!t0 || ti->StopTime() > time(NULL) && ti->Compare(*t0) < 0))
+      if ((ti->HasFlags(tfActive)) && (!t0 || (ti->StopTime() > time(NULL) && ti->Compare(*t0) < 0)))
          t0 = ti;
       }
   return t0;

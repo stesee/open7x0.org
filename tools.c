@@ -806,7 +806,7 @@ const char *cBase64Encoder::NextLine(void)
   int r = 0;
   while (i < length && r < maxResult - 3) {
         result[r++] = b64[(data[i] >> 2) & 0x3F];
-        char c = (data[i] << 4) & 0x3F;
+        uchar c = (data[i] << 4) & 0x3F;
         if (++i < length)
            c |= (data[i] >> 4) & 0x0F;
         result[r++] = b64[c];

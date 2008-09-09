@@ -64,7 +64,7 @@ void cRingBuffer::UpdatePercentage(int Fill)
      maxFill = Fill;
   int percent = Fill * 100 / (Size() - 1) / PERCENTAGEDELTA * PERCENTAGEDELTA;
   if (percent != lastPercent) {
-     if (percent >= PERCENTAGETHRESHOLD && percent > lastPercent || percent < PERCENTAGETHRESHOLD && lastPercent >= PERCENTAGETHRESHOLD) {
+     if ((percent >= PERCENTAGETHRESHOLD && percent > lastPercent) || (percent < PERCENTAGETHRESHOLD && lastPercent >= PERCENTAGETHRESHOLD)) {
 //M7X0 BEGIN AK
         dsyslog("buffer usage%s%s: %d%% (tid=%d)",description?" for ":"",
 	  description?description:"", percent, getThreadTid);

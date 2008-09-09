@@ -82,7 +82,7 @@ enum eKeys { // "Up" and "Down" must be the first two keys!
 
 struct tKey {
   eKeys type;
-  char *name;
+  const char *name;
   };
 
 class cKey : public cListObject {

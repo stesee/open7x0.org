@@ -797,7 +797,7 @@ void cSchedule::DropOutdated(time_t SegmentStart, time_t SegmentEnd, uchar Table
          if (p->EndTime() > SegmentStart) {
             if (p->StartTime() < SegmentEnd) {
                // The event overlaps with the given time segment.
-               if (p->TableID() > TableID || p->TableID() == TableID && p->Version() != Version) {
+               if (p->TableID() > TableID || (p->TableID() == TableID && p->Version() != Version)) {
                   // The segment overwrites all events from tables with higher ids, and
                   // within the same table id all events must have the same version.
                   // We can't delete the event right here because a timer might have

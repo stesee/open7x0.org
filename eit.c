@@ -56,7 +56,7 @@ cEIT::cEIT(cSchedules *Schedules, int Source, u_char Tid, const u_char *Data, bo
   for (SI::Loop::Iterator it; eventLoop.getNext(SiEitEvent, it); ) {
       bool ExternalData = false;
       // Drop bogus events - but keep NVOD reference events, where all bits of the start time field are set to 1, resulting in a negative number.
-      if (SiEitEvent.getStartTime() == 0 || SiEitEvent.getStartTime() > 0 && SiEitEvent.getDuration() == 0)
+      if (SiEitEvent.getStartTime() == 0 || (SiEitEvent.getStartTime() > 0 && SiEitEvent.getDuration() == 0))
          continue;
       Empty = false;
       if (!SegmentStart)

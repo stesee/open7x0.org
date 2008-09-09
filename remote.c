@@ -187,7 +187,7 @@ eKeys cRemote::Get(int WaitMs, char **UnknownCode)
          lastActivity = time(NULL);
          return k;
          }
-      else if (!WaitMs || !keyPressed.TimedWait(mutex, WaitMs) && repeatTimeout.TimedOut())
+      else if (!WaitMs || (!keyPressed.TimedWait(mutex, WaitMs) && repeatTimeout.TimedOut()))
          return kNone;
       else if (learning && UnknownCode && unknownCode) {
          *UnknownCode = unknownCode;

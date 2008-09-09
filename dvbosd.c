@@ -214,7 +214,7 @@ cDvbOsdProvider::cDvbOsdProvider(int OsdDev)
      return;
      }
 
-  if (fbWidth != 720 | fbHeight != 576 | fbBpp != 8 | !fbInterlaced) {
+  if ((fbWidth != 720) | (fbHeight != 576) | (fbBpp != 8) | !fbInterlaced) {
      esyslog("ERROR: illegal or unsupported framebuffer: %u x %u x %u !",
                                                    fbWidth,fbHeight,fbBpp);
      munmap(fbMem, fbWidth * fbHeight * (fbBpp>>3));
@@ -288,7 +288,7 @@ cDvbOsdProvider::~cDvbOsdProvider(){
 
 cOsd *cDvbOsdProvider::CreateOsd(int Left, int Top)
 {
-  if (fbMem != NULL & fbWidth == 720 & fbHeight == 576 & fbBpp == 8 & fbInterlaced) {
+  if ((fbMem != NULL) & (fbWidth == 720) & (fbHeight == 576) & (fbBpp == 8) & fbInterlaced) {
      return new cDvbOsd(Left, Top, osdDev, fbMem);
      }
 
