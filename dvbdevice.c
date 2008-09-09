@@ -3244,6 +3244,10 @@ bool cDvbDevice::SetPlayMode(ePlayMode PlayMode)
 
          CHECK(ioctl(fd_audio, AUDIO_STOP, 0));
          CHECK(ioctl(fd_video, VIDEO_STOP, 0));
+
+         if ((playMode == pmAudioOnly) | (playMode == pmAudioOnlyBlack))
+            TurnOffLiveMode(true, true);
+
          if (tsreplayer != NULL) {
             delete tsreplayer;
             tsreplayer=NULL;
@@ -3255,7 +3259,8 @@ bool cDvbDevice::SetPlayMode(ePlayMode PlayMode)
             delete tsreplayer;
             tsreplayer=NULL;
          }
-         TurnOffLiveMode(true, !pidHandles[cDevice::ptVideo].pid);
+         TurnOffLiveMode(true, !pidHandles[cDevice::ptVideo].pid |
+              (playMode == pmAudioOnly) | (playMode == pmAudioOnlyBlack));
          CHECK(ioctl(fd_audio, AUDIO_STOP,0));
          CHECK(ioctl(fd_video, VIDEO_STOP, 1));
 
@@ -3329,10 +3334,14 @@ bool cDvbDevice::SetPlayMode(ePlayMode PlayMode)
             tsreplayer=NULL;
          }
 
+         TurnOffLiveMode(true, true);
          CHECK(ioctl(fd_audio, AUDIO_STOP,0));
          CHECK(ioctl(fd_video, VIDEO_STOP, 1));
-         isyslog("Audio only play modes not yet implemented");
-         return false;
+         playBufferFill = 0;
+         playAudioId = 0;
+         CHECK(ioctl(fd_audio, AUDIO_SET_AV_SYNC, false));
+         CHECK(ioctl(fd_video,VIDEO_PLAY,0));
+         CHECK(ioctl(fd_audio,AUDIO_PLAY,0));
          break;
     case pmTsAudioVideo:
     case pmTsAudioOnlyBlack:
@@ -3427,7 +3436,7 @@ void cDvbDevice::TrickSpeed(int Speed, bool UseFastForward)
      return;
      }
 
-  if (playMode != pmAudioVideo & playMode != pmVideoOnly)
+  if ((playMode != pmAudioVideo) & (playMode != pmVideoOnly))
      return;
   dsyslog("TrickSpeed called Speed %d %d!",Speed, UseFastForward);
   CHECK(ioctl(fd_audio, AUDIO_SET_MUTE, true));
@@ -3443,7 +3452,7 @@ void cDvbDevice::TrickSpeed(int Speed, bool UseFastForward)
 
 void cDvbDevice::Clear(void)
 {
-  if (playMode == pmAudioVideo | playMode == pmVideoOnly) {
+  if (playMode < pmTsAudioVideo) {
      dsyslog("cDvbDevice::Clear(void) called!");
      CHECK(ioctl(fd_audio, AUDIO_SET_MUTE, true));
      CHECK(ioctl(fd_audio, AUDIO_STOP,0));
@@ -3825,8 +3834,108 @@ int cDvbDevice::PlayAudio(const uchar *Data, int Length, uchar Id)
      int r = safe_write(fd_playDvr, playBuffer, playBufferFill);
      return r >= 0 ? Length : r;
      }
-  esyslog("Audio only play modes not yet implemented");
-  return -1;
+
+  return PlayAudioOnly(Data, Length, Id);
+}
+
+int cDvbDevice::PlayAudioOnly(const uchar *Data, int Length, uchar Id)
+{
+  int t1, t2;
+  int pay_off = PESPayload(Data,Length,t1,t2);
+  if (Id != playAudioId) {
+     playBufferFill = 0;
+     if ((Id == 0xbd) | ((Id & 0xf0) == 0x80)) {
+        esyslog("Cannot play AC3 in audio only mode!");
+        errno = EOPNOTSUPP;
+        return -1;
+        }
+
+     if ((Id & 0xf0) == 0xa0) {
+        if (pay_off + 7 > Length) {
+           esyslog("Invalid LPCM packet");
+           errno = EINVAL;
+           return -1;
+           }
+        static const int bps_code[] = { 16, 20, 24, 32};
+        static const int sr_code[] = { 48000, 96000, 44100, 32000};
+        int bits_per_sample = bps_code[(Data[pay_off + 5] >> 6) & 0x3];
+        int sample_rate = sr_code[(Data[pay_off + 5] >> 4) & 0x3];
+        int channels = (Data[pay_off + 5] & 0xf) + 1;
+        if ((bits_per_sample != 16) | (channels != 2)) {
+           esyslog("Unsupported LPCM format");
+           errno = EINVAL;
+           return -1;
+           }
+        CHECK(ioctl(fd_audio,AUDIO_SET_STREAMTYPE,AUDIO_CAP_LPCM));
+        CHECK(ioctl(fd_audio,AUDIO_SET_SAMPLE_RATE, sample_rate));
+        }
+     else {
+        if (pay_off + 4 > Length) {
+           esyslog("Invalid mpeg-audio packet");
+           errno = EINVAL;
+           return -1;
+           }
+        static const int sr_code[] = { 44100, 48000, 32000, 0};
+        static const int stream_type[] = { AUDIO_CAP_MP1, AUDIO_CAP_MP2, AUDIO_CAP_MP3 };
+        uint32_t header = BE2HOST(get_unaligned((uint32_t *)(Data + pay_off)));
+        int id = 1 - ((header >> 19) & 1);
+        int layer = 3 - ((header >> 17) & 3);
+        int sample_rate = sr_code[(header >> 10) & 3] >> id;
+        if ((((header >> 20) & 0xfff) != 0xfff) | (layer < 0) | (sample_rate <= 0)) {
+           esyslog("Invalid mpeg-audio frame header at start of pes-packet");
+           errno = EINVAL;
+           return -1;
+           }
+        CHECK(ioctl(fd_audio,AUDIO_SET_STREAMTYPE, stream_type[layer]));
+        CHECK(ioctl(fd_audio,AUDIO_SET_SAMPLE_RATE, sample_rate));
+        }
+     playAudioId = Id;
+     }
+
+  if ((Id & 0xf0) == 0xa0)
+     pay_off += 7;
+
+  if (pay_off >= Length) {
+     esyslog("Invalid audio packet");
+     errno = EINVAL;
+     return -1;
+  }
+
+  const uchar *write_data = Data + pay_off;
+  int write_length = Length - pay_off;
+  void *(*fp_memcpy)(void *,const void *, size_t) = &memcpy;
+  if (playBufferFill) {
+     if (playBufferFill + write_length > KILOBYTE(2*65)) {
+        esyslog("To much unplayed audio data");
+        errno = EOVERFLOW;
+        return -1;
+        }
+     memcpy(playBuffer + playBufferFill, write_data, write_length);
+     playBufferFill += write_length;
+     write_data = playBuffer;
+     write_length = playBufferFill;
+     fp_memcpy = &memmove;
+     }
+
+
+  do {
+     int r = write(fd_audio, write_data, write_length);
+     if (r < 0) {
+        if ((errno == EAGAIN) | (errno == EINTR))
+           continue;
+        if (errno == EBUSY)
+           break;
+        return -1;
+        }
+     write_data += r;
+     write_length -= r;
+     } while (write_length > 0);
+
+  playBufferFill = write_length;
+  if ((write_length > 0) & (write_data != playBuffer)) {
+     fp_memcpy(playBuffer, write_data, write_length);
+     }
+  return Length;
 }
 
 

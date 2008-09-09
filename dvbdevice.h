@@ -164,6 +164,7 @@ private:
   void PESPacket2TS(const uchar *Data, int Length, int Pid, int &CCounter);
   friend class c7x0TsReplayer;
   c7x0TsReplayer *tsreplayer;
+  int PlayAudioOnly(const uchar *Data, int Length, uchar Id);
 //M7X0 END AK
 protected:
   ePlayMode playMode;
