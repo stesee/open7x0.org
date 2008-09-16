@@ -3889,6 +3889,7 @@ int cDvbDevice::PlayAudioOnly(const uchar *Data, int Length, uchar Id)
         CHECK(ioctl(fd_audio,AUDIO_SET_STREAMTYPE, stream_type[layer]));
         CHECK(ioctl(fd_audio,AUDIO_SET_SAMPLE_RATE, sample_rate));
         }
+     CHECK(ioctl(fd_audio,AUDIO_PLAY,0));
      playAudioId = Id;
      }
 
