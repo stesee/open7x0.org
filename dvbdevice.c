@@ -3849,7 +3849,7 @@ int cDvbDevice::PlayAudioOnly(const uchar *Data, int Length, uchar Id)
         errno = EOPNOTSUPP;
         return -1;
         }
-
+     CHECK(ioctl(fd_audio,AUDIO_STOP,0));
      if ((Id & 0xf0) == 0xa0) {
         if (pay_off + 7 > Length) {
            esyslog("Invalid LPCM packet");
