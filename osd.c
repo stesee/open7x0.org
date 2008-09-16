@@ -477,6 +477,11 @@ bool cBitmap::SetXpm(const char *const Xpm[], bool IgnoreNone)
   return true;
 }
 
+inline void cBitmap::SetIndexRaw(int x, int y, tIndex Index)
+{
+  bitmap[y*width+x]=Index;
+}
+
 void cBitmap::SetIndex(int x, int y, tIndex Index)
 {
   if (bitmap) {
@@ -490,6 +495,14 @@ void cBitmap::SetIndex(int x, int y, tIndex Index)
            }
         }
      }
+}
+
+void cBitmap::AddDirty(int xmin, int ymin, int xmax, int ymax)
+{
+  if (xmin >= 0     && dirtyX1 > xmin) dirtyX1=xmin;
+  if (ymin >= 0     && dirtyY1 > ymin) dirtyY1=ymin;
+  if (xmax < width  && dirtyX2 < xmax) dirtyX2=xmax;
+  if (ymax < height && dirtyY2 < ymax) dirtyY2=ymax;
 }
 
 void cBitmap::DrawPixel(int x, int y, tColor Color)
@@ -579,11 +592,12 @@ void cBitmap::DrawText(int x, int y, const char *s, tColor ColorFg, tColor Color
            if (limit && int(x + CharData->width) > limit)
               break; // we don't draw partial characters
            if (int(x + CharData->width) > 0) {
+           	  AddDirty(x,y,x+CharData->width,y+h);
               for (int row = 0; row < h; row++) {
                   cFont::tPixelData PixelData = CharData->lines[row];
                   for (int col = CharData->width; col-- > 0; ) {
                       if (ColorBg != clrTransparent || (PixelData & 1))
-                         SetIndex(x + col, y + row, (PixelData & 1) ? fg : bg);
+                         SetIndexRaw(x + col, y + row, (PixelData & 1) ? fg : bg);
                       PixelData >>= 1;
                       }
                   }
@@ -609,9 +623,12 @@ void cBitmap::DrawRectangle(int x1, int y1, int x2, int y2, tColor Color)
      x2 = min(x2, width - 1);
      y2 = min(y2, height - 1);
      tIndex c = Index(Color);
-     for (int y = y1; y <= y2; y++)
-         for (int x = x1; x <= x2; x++)
-             SetIndex(x, y, c);
+     AddDirty(x1,y1,x2,y2);
+     tIndex *bm=bitmap+y1*width+x1;
+     for (int y=y1;y<=y2;y++) {
+       	memset(bm,c,x2-x1+1);
+       	bm+=width;
+       }
      }
 }
 
