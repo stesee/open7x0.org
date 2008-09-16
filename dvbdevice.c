@@ -3921,9 +3921,11 @@ int cDvbDevice::PlayAudioOnly(const uchar *Data, int Length, uchar Id)
      fp_memcpy = &memmove;
      }
 
-  while (write_length >= min_playsize) {
+  int retry_count = 0;
+  while ((write_length >= min_playsize) & (retry_count < 3)) {
         int r = write(fd_audio, write_data, write_length);
         if (r < 0) {
+           retry_count++;
            if (errno == EAGAIN) {
               cCondWait::SleepMs(3);
               continue;
