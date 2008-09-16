@@ -3924,7 +3924,11 @@ int cDvbDevice::PlayAudioOnly(const uchar *Data, int Length, uchar Id)
   while (write_length >= min_playsize) {
         int r = write(fd_audio, write_data, write_length);
         if (r < 0) {
-           if ((errno == EAGAIN) | (errno == EINTR))
+           if (errno == EAGAIN) {
+              cCondWait::SleepMs(3);
+              continue;
+              }
+           if (errno == EINTR)
               continue;
            /* Driver returns EPERM if write array too small
             * yet another ugly bug */
