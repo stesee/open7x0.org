@@ -1051,7 +1051,7 @@ bool cMenuScheduleItem::Update(bool Force)
   if (Force || timerMatch != OldTimerMatch) {
      char *buffer = NULL;
      char t = TimerMatchChars[timerMatch];
-     char v = event->Vps() && (event->Vps() - event->StartTime()) ? 'V' : ' ';
+     char v = event->Vps() ? (event->Vps() - event->StartTime() ? 'V' : 'v' ) : ' ';
      char r = event->SeenWithin(30) && event->IsRunning() ? '*' : ' ';
      if (channel && withDate)
         asprintf(&buffer, "%d\t%.*s\t%.*s\t%s\t%c%c%c\t%s", channel->Number(), 6, channel->ShortName(true), 6, *event->GetDateString(), *event->GetTimeString(), t, v, r, event->Title());
