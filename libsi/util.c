@@ -190,6 +190,10 @@ void Parsable::CheckParse() {
 time_t DVBTime::getTime(unsigned char date_hi, unsigned char date_lo, unsigned char time_hour, unsigned char time_minute, unsigned char time_second) {
 //M7X0 BEGIN AK
    u_int32_t mjd = date_hi << 8 | date_lo;
+   /* undefined time: all bits are set to 1 */
+   if ((mjd == 0xffff) & (time_hour == 0xff) & (time_minute == 0xff) &
+        (time_second == 0xff))
+      return -1;
 /* Thanks to LutherBlissett who pointed this out
  * modified julian date can be converted like this.
  * It measures days from 1858-11-17 00:00 UTC. (40587 days to epoch)
