@@ -188,26 +188,18 @@ void Parsable::CheckParse() {
 
 //taken and adapted from libdtv, (c) Rolf Hakenes and VDR, (c) Klaus Schmidinger
 time_t DVBTime::getTime(unsigned char date_hi, unsigned char date_lo, unsigned char time_hour, unsigned char time_minute, unsigned char time_second) {
-   u_int16_t mjd = date_hi << 8 | date_lo;
-   struct tm t;
-
-   t.tm_sec = bcdToDec(time_second);
-   t.tm_min = bcdToDec(time_minute);
-   t.tm_hour = bcdToDec(time_hour);
-
-   int k;
-   t.tm_year = (int) ((mjd - 15078.2) / 365.25);
-   t.tm_mon = (int) ((mjd - 14956.1 - (int)(t.tm_year * 365.25)) / 30.6001);
-   t.tm_mday = (int) (mjd - 14956 - (int)(t.tm_year * 365.25) - (int)(t.tm_mon * 30.6001));
-   k = (t.tm_mon == 14 || t.tm_mon == 15) ? 1 : 0;
-   t.tm_year = t.tm_year + k;
-   t.tm_mon = t.tm_mon - 1 - k * 12;
-   t.tm_mon--;
-
-   t.tm_isdst = -1;
-   t.tm_gmtoff = 0;
-
-   return timegm(&t);
+//M7X0 BEGIN AK
+   u_int32_t mjd = date_hi << 8 | date_lo;
+/* Thanks to LutherBlissett who pointed this out
+ * modified julian date can be converted like this.
+ * It measures days from 1858-11-17 00:00 UTC. (40587 days to epoch)
+ * No leapseconds or timezones have to be considered.
+ */
+   return time_t((mjd - 40587) * 24 * 60 * 60 +
+                 60 * 60 * bcdToDec(time_hour) +
+                 60 * bcdToDec(time_minute) +
+                 bcdToDec(time_second));
+//M7X0 END AK
 }
 
 time_t DVBTime::getDuration(unsigned char time_hour, unsigned char time_minute, unsigned char time_second) {
