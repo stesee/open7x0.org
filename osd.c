@@ -592,7 +592,7 @@ void cBitmap::DrawText(int x, int y, const char *s, tColor ColorFg, tColor Color
            if (limit && int(x + CharData->width) > limit)
               break; // we don't draw partial characters
            if (int(x + CharData->width) > 0) {
-           	  AddDirty(x,y,x+CharData->width,y+h);
+              AddDirty(x, y, x + CharData->width - 1, y + h - 1);
               for (int row = 0; row < h; row++) {
                   cFont::tPixelData PixelData = CharData->lines[row];
                   for (int col = CharData->width; col-- > 0; ) {
@@ -625,10 +625,11 @@ void cBitmap::DrawRectangle(int x1, int y1, int x2, int y2, tColor Color)
      tIndex c = Index(Color);
      AddDirty(x1,y1,x2,y2);
      tIndex *bm=bitmap+y1*width+x1;
+     int w = x2-x1+1;
      for (int y=y1;y<=y2;y++) {
-       	memset(bm,c,x2-x1+1);
-       	bm+=width;
-       }
+         memset(bm, c, w);
+         bm+=width;
+         }
      }
 }
 
