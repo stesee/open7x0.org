@@ -3600,6 +3600,33 @@ bool cDvbDevice::Flush(int TimeoutMs)
   if (tsreplayer!=NULL)
      return tsreplayer->Flush(TimeoutMs);
   dsyslog("cDvbDevice::Flush called");
+
+  if ((playMode == pmAudioOnly) | (playMode == pmAudioOnly)) {
+     const uchar *write_data = playBuffer;
+
+     int retry_count = 0;
+     while ((playBufferFill >= 0) & (retry_count < 100)) {
+           int r = write(fd_audio, write_data, playBufferFill);
+           if (r < 0) {
+              retry_count++;
+              if (errno == EAGAIN) {
+                 cCondWait::SleepMs(3);
+                 continue;
+                 }
+              if (errno == EINTR)
+               continue;
+              /* Driver returns EPERM if write array too small
+               * yet another ugly bug */
+              if ((errno == EBUSY) | (errno == EPERM))
+                 break;
+              return false;
+              }
+           if (r == 0)
+              break;
+           write_data += r;
+           playBufferFill -= r;
+           }
+     }
   return true;
 }
 
@@ -3893,7 +3920,7 @@ int cDvbDevice::PlayAudioOnly(const uchar *Data, int Length, uchar Id)
      playAudioId = Id;
      }
 
-  int min_playsize = Length - pay_off;
+  int min_playsize = KILOBYTE(8);
   if ((Id & 0xf0) == 0xa0) {
      pay_off += 7;
      min_playsize = 48 * 1024;
@@ -3922,7 +3949,7 @@ int cDvbDevice::PlayAudioOnly(const uchar *Data, int Length, uchar Id)
      }
 
   int retry_count = 0;
-  while ((write_length >= min_playsize) & (retry_count < 3)) {
+  while ((write_length >= min_playsize) & (retry_count < 2)) {
         int r = write(fd_audio, write_data, write_length);
         if (r < 0) {
            retry_count++;
