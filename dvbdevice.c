@@ -3601,7 +3601,7 @@ bool cDvbDevice::Flush(int TimeoutMs)
      return tsreplayer->Flush(TimeoutMs);
   dsyslog("cDvbDevice::Flush called");
 
-  if ((playMode == pmAudioOnly) | (playMode == pmAudioOnly)) {
+  if ((playMode == pmAudioOnly) | (playMode == pmAudioOnlyBlack)) {
      const uchar *write_data = playBuffer;
 
      int retry_count = 0;
