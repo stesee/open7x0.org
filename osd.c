@@ -56,43 +56,47 @@ void cPalette::SetBpp(int Bpp)
 // Allow in this case only 255 colors (last gets reversed for transparency)
 // Can we assume background color (index 0) is always transparent,
 // if we allow only one area??
-#ifndef USE_32BPP_FRAMEBUFFER
   if (bpp == 8)
      maxColors--;
-#endif
-//M7X0 END AK
+
   Reset();
 }
 
 void cPalette::SetColor(int Index, tColor Color)
 {
   if (Index < maxColors) {
-     if (numColors <= Index) {
+     if (numColors <= Index)
         numColors = Index + 1;
-        modified = true;
-        }
-     else
-        modified |= color[Index] != Color;
+     modified = true;
      color[Index] = Color;
      }
 }
-
+//M7X0 END AK
 const tColor *cPalette::Colors(int &NumColors)
 {
   NumColors = numColors;
   return numColors ? color : NULL;
 }
 
+//M7X0 BEGIN AK
 void cPalette::Take(const cPalette &Palette, tIndexes *Indexes, tColor ColorFg, tColor ColorBg)
 {
-  for (int i = 0; i < Palette.numColors; i++) {
-      tColor Color = Palette.color[i];
-      if (ColorFg || ColorBg) {
-         switch (i) {
-           case 0: Color = ColorBg; break;
-           case 1: Color = ColorFg; break;
+  int i = 0;
+  if (ColorFg | ColorBg) {
+     if (0 < Palette.numColors) {
+        int n = Index(ColorBg);
+        if (Indexes)
+           (*Indexes)[0] = n;
+        if (1 < Palette.numColors) {
+           n = Index(ColorFg);
+           if (Indexes)
+              (*Indexes)[1] = n;
            }
-         }
+        }
+     i = 2;
+     }
+  for (; i < Palette.numColors; i++) {
+      tColor Color = Palette.color[i];
       int n = Index(Color);
       if (Indexes)
          (*Indexes)[i] = n;
@@ -101,10 +105,11 @@ void cPalette::Take(const cPalette &Palette, tIndexes *Indexes, tColor ColorFg, 
 
 void cPalette::Replace(const cPalette &Palette)
 {
-  for (int i = 0; i < Palette.numColors; i++)
-      SetColor(i, Palette.color[i]);
-  numColors = Palette.numColors;
+  memcpy(color, Palette.color, sizeof(color[0]) *  Palette.numColors);
+  modified = true;
+  numColors = min(Palette.numColors, maxColors);
 }
+//M7X0 END AK
 
 // --- cBitmap ---------------------------------------------------------------
 
@@ -160,12 +165,12 @@ void cBitmap::SetSize(int Width, int Height)
   else
      esyslog("ERROR: invalid bitmap parameters (%d, %d)!", width, height);
 }
-
+//M7X0 BEGIN AK
 bool cBitmap::Contains(int x, int y) const
 {
   x -= x0;
   y -= y0;
-  return 0 <= x && x < width && 0 <= y && y < height;
+  return (0 <= x) & (x < width) & (0 <= y) & (y < height);
 }
 
 bool cBitmap::Covers(int x1, int y1, int x2, int y2) const
@@ -174,7 +179,7 @@ bool cBitmap::Covers(int x1, int y1, int x2, int y2) const
   y1 -= y0;
   x2 -= x0;
   y2 -= y0;
-  return x1 <= 0 && y1 <= 0 && x2 >= width - 1 && y2 >= height - 1;
+  return (x1 <= 0) & (y1 <= 0) & (x2 >= width - 1) & (y2 >= height - 1);
 }
 
 bool cBitmap::Intersects(int x1, int y1, int x2, int y2) const
@@ -183,9 +188,9 @@ bool cBitmap::Intersects(int x1, int y1, int x2, int y2) const
   y1 -= y0;
   x2 -= x0;
   y2 -= y0;
-  return !(x2 < 0 || x1 >= width || y2 < 0 || y1 >= height);
+  return !((x2 < 0) | (x1 >= width) | (y2 < 0) | (y1 >= height));
 }
-
+//M7X0 END AK
 bool cBitmap::Dirty(int &x1, int &y1, int &x2, int &y2)
 {
   if (dirtyX2 >= 0) {
@@ -206,72 +211,95 @@ void cBitmap::Clean(void)
   dirtyY2 = -1;
 }
 
+//M7X0 BEGIN AK
 bool cBitmap::LoadXpm(const char *FileName)
 {
-  bool Result = false;
+  bool Result = true;
   FILE *f = fopen(FileName, "r");
-  if (f) {
-     char **Xpm = NULL;
-     bool isXpm = false;
-     int lines = 0;
-     int index = 0;
-     char *s;
-     cReadLine ReadLine;
-     while ((s = ReadLine.Read(f)) != NULL) {
-           s = skipspace(s);
-           if (!isXpm) {
-              if (strcmp(s, "/* XPM */") != 0) {
-                 esyslog("ERROR: invalid header in XPM file '%s'", FileName);
-                 break;
-                 }
-              isXpm = true;
-              }
-           else if (*s++ == '"') {
-              if (!lines) {
-                 int w, h, n, c;
-                 if (4 != sscanf(s, "%d %d %d %d", &w, &h, &n, &c)) {
-                    esyslog("ERROR: faulty 'values' line in XPM file '%s'", FileName);
-                    isXpm = false;
-                    break;
-                    }
-                 lines = h + n + 1;
-                 Xpm = MALLOC(char *, lines);
-                 memset(Xpm, 0, lines * sizeof(char*));
-                 }
-              char *q = strchr(s, '"');
-              if (!q) {
-                 esyslog("ERROR: missing quotes in XPM file '%s'", FileName);
-                 isXpm = false;
-                 break;
-                 }
-              *q = 0;
-              if (index < lines)
-                 Xpm[index++] = strdup(s);
-              else {
-                 esyslog("ERROR: too many lines in XPM file '%s'", FileName);
-                 isXpm = false;
-                 break;
-                 }
-              }
-           }
-     if (isXpm) {
-        if (index == lines)
-           Result = SetXpm(Xpm);
-        else
-           esyslog("ERROR: too few lines in XPM file '%s'", FileName);
-        }
-     if (Xpm) {
-        for (int i = 0; i < index; i++)
-            free(Xpm[i]);
-        }
-     free(Xpm);
-     fclose(f);
-     }
-  else
+
+  if (!f) {
      esyslog("ERROR: can't open XPM file '%s'", FileName);
+     return false;
+     }
+
+  char **Xpm = NULL;
+  int lines = 0;
+  int index = 0;
+  char *s;
+
+  cReadLine ReadLine;
+
+  if ((s = ReadLine.Read(f)) == NULL) {
+     esyslog("ERROR: cannot read header in XPM file '%s'", FileName);
+     return false;
+     }
+  s = skipspace(s);
+  if (strcmp(s, "/* XPM */") != 0) {
+     esyslog("ERROR: invalid header in XPM file '%s'", FileName);
+     return false;
+     }
+
+  while ((lines == 0) && (s = ReadLine.Read(f)) != NULL) {
+        s = skipspace(s);
+        if (*s++ != '"')
+           continue;
+        int w, h, n, c;
+        if (4 != sscanf(s, "%d %d %d %d", &w, &h, &n, &c)) {
+           esyslog("ERROR: faulty 'values' line in XPM file '%s'", FileName);
+           return false;
+           }
+        char *q = strchr(s, '"');
+        if (!q) {
+           esyslog("ERROR: missing quotes in XPM file '%s'", FileName);
+           return false;
+           }
+        *q = 0;
+
+        lines = h + n + 1;
+        Xpm = MALLOC(char *, lines);
+        memset(Xpm, 0, lines * sizeof(char*));
+        Xpm[0] = strdup(s);
+        index++;
+        }
+
+  if (lines == 0)
+     return false;
+
+  while ((s = ReadLine.Read(f)) != NULL) {
+        s = skipspace(s);
+        if (*s++ != '"')
+           continue;
+        char *q = strchr(s, '"');
+        if (!q) {
+           esyslog("ERROR: missing quotes in XPM file '%s'", FileName);
+           break;
+           }
+        *q = 0;
+        if (index < lines)
+           Xpm[index++] = strdup(s);
+        else {
+           esyslog("ERROR: too many lines in XPM file '%s'", FileName);
+           Result = false;
+           break;
+           }
+        }
+
+  if (Result) {
+     if (index == lines)
+        Result = SetXpm(Xpm);
+     else
+        esyslog("ERROR: too few lines in XPM file '%s'", FileName);
+     }
+
+  if (Xpm) {
+     for (int i = 0; i < index; i++)
+         free(Xpm[i]);
+     }
+  free(Xpm);
+  fclose(f);
   return Result;
 }
-//M7X0 BEGIN AK
+
 bool cBitmap::SetXpm(const char *const Xpm[], bool IgnoreNone)
 {
   const char *const *p = Xpm;
@@ -284,10 +312,8 @@ bool cBitmap::SetXpm(const char *const Xpm[], bool IgnoreNone)
      esyslog("ERROR: too many colors in XPM: %d", n);
      return false;
      }
-  int b = 0;
-  while (1 << (1 << b) < (IgnoreNone ? n - 1 : n))
-        b++;
-  SetBpp(1 << b);
+
+  SetBpp(8);
   SetSize(w, h);
 
   int NoneColorIndex = MAXNUMCOLORS;
@@ -325,15 +351,17 @@ bool cBitmap::SetXpm(const char *const Xpm[], bool IgnoreNone)
             }
          else
             color = strtoul(++s, NULL, 16) | 0xFF000000;
-         const int ind = (IgnoreNone && i > NoneColorIndex)  ? i - 1 : i;
+         int ind = i;
+         if ((IgnoreNone == true) & (i > NoneColorIndex))
+            ind = i - 1;
          colorIndex[ci] = ind;
          SetColor(ind, color);
          }
 
-     for (int y = 0 ; y < h; y++) {
+     for (int y = 0; y < h; y++) {
          const char *s = *++p;
          int x;
-         for (x = 0 ; x < w && *s ; x++, s++) {
+         for (x = 0; (x < w) & (*s != 0); x++, s++) {
              const int i = colorIndex[(uint8_t) *s];
              if (i == -1) {
                 esyslog("ERROR: undefined pixel color in XPM: %d %d '%s'", x, y, s);
@@ -341,69 +369,7 @@ bool cBitmap::SetXpm(const char *const Xpm[], bool IgnoreNone)
                 }
              if (i == NoneColorIndex)
                 NoneColorIndex = MAXNUMCOLORS;
-             SetIndex(x, y, i);
-             }
-         if (x < w) {
-            esyslog("ERROR: faulty 'colors' line in XPM: '%s'", *p);
-            return false;
-            }
-         }
-     if (NoneColorIndex < MAXNUMCOLORS && !IgnoreNone)
-        return SetXpm(Xpm, true);
-     return true;
-     }
-
-  if (c == 2) {
-     int colorIndex[65536];
-     memset(colorIndex, 0xff, sizeof(int) * 65536);
-
-     for (int i = 0; i < n; i ++) {
-         const char *s = *++p;
-         if (!s[0] || !s[1]) {
-            esyslog("ERROR: faulty 'colors' line in XPM: '%s'", s);
-            return false;
-            }
-
-         const int ci = (uint16_t) ((s[0] << 8) | s[1]);
-         s = skipspace(s + 2);
-         if (*s != 'c') {
-             esyslog("ERROR: unknown color key in XPM: '%c'", *s);
-             return false;
-             }
-         s = skipspace(s + 1);
-         tColor color = 0;
-         if (NoneColorIndex == MAXNUMCOLORS && strcasecmp(s, "none") == 0) {
-            NoneColorIndex = i;
-            if (IgnoreNone)
-               continue;
-            if (i) {
-               esyslog("WARNING: XPM none color Index %d != 0", i);
-               }
-            color = clrTransparent;
-            }
-         else if (*s != '#') {
-            esyslog("ERROR: unknown color code in XPM: '%c'", *s);
-            return false;
-            }
-         else
-            color = strtoul(++s, NULL, 16) | 0xFF000000;
-         const int ind = (IgnoreNone && i > NoneColorIndex)  ? i - 1 : i;
-         colorIndex[ci] = ind;
-         SetColor(ind, color);
-         }
-
-     for (int y = 0 ; y < h; y++) {
-         const char *s = *++p;
-         int x;
-         for (x = 0 ; x < w && s[0] && s[1] ; x++, s += 2) {
-             const int i = colorIndex[(uint16_t) ((s[0] << 8) | s[1])];
-             if (i == -1) {
-                esyslog("ERROR: undefined pixel color in XPM: %d %d '%s'", x, y, s);
-                return false;
-                }
-             if (i == NoneColorIndex)
-                NoneColorIndex = MAXNUMCOLORS;
-             SetIndex(x, y, i);
+             SetIndexRaw(x, y, i);
              }
          if (x < w) {
             esyslog("ERROR: faulty 'colors' line in XPM: '%s'", *p);
@@ -444,7 +410,10 @@ bool cBitmap::SetXpm(const char *const Xpm[], bool IgnoreNone)
          }
       else
          color = strtoul(++s, NULL, 16) | 0xFF000000;
-      SetColor((IgnoreNone && i > NoneColorIndex) ? i - 1 : i, color);
+      int ind = i;
+      if ((IgnoreNone == true) & (i > NoneColorIndex))
+         ind = i - 1;
+      SetColor(ind, color);
       }
   const int len = w * c;
   for (int y = 0; y < h; y++) {
@@ -460,7 +429,10 @@ bool cBitmap::SetXpm(const char *const Xpm[], bool IgnoreNone)
               if (strncmp(Xpm[i + 1], s, c) == 0) {
                  if (i == NoneColorIndex)
                     NoneColorIndex = MAXNUMCOLORS;
-                 SetIndex(x, y, (IgnoreNone && i > NoneColorIndex) ? i - 1 : i);
+                 int ind = i;
+                 if ((IgnoreNone == true) & (i > NoneColorIndex))
+                    ind = i - 1;
+                 SetIndexRaw(x, y, ind);
                  break;
                  }
               }
@@ -499,49 +471,76 @@ void cBitmap::SetIndex(int x, int y, tIndex Index)
 //M7X0 BEGIN AK
 void cBitmap::AddDirty(int xmin, int ymin, int xmax, int ymax)
 {
-  if (xmin >= 0     && dirtyX1 > xmin) dirtyX1=xmin;
-  if (ymin >= 0     && dirtyY1 > ymin) dirtyY1=ymin;
-  if (xmax < width  && dirtyX2 < xmax) dirtyX2=xmax;
-  if (ymax < height && dirtyY2 < ymax) dirtyY2=ymax;
+  if (dirtyX1 > xmin) dirtyX1=xmin;
+  if (dirtyY1 > ymin) dirtyY1=ymin;
+  if (dirtyX2 < xmax) dirtyX2=xmax;
+  if (dirtyY2 < ymax) dirtyY2=ymax;
 }
-//M7X0 END AK
+
 void cBitmap::DrawPixel(int x, int y, tColor Color)
 {
   x -= x0;
   y -= y0;
-  if (0 <= x && x < width && 0 <= y && y < height)
-     SetIndex(x, y, Index(Color));
+  SetIndex(x, y, Index(Color));
 }
+
 
 void cBitmap::DrawBitmap(int x, int y, const cBitmap &Bitmap, tColor ColorFg, tColor ColorBg, bool ReplacePalette, bool Overlay)
 {
   if (bitmap && Bitmap.bitmap && Intersects(x, y, x + Bitmap.Width() - 1, y + Bitmap.Height() - 1)) {
-     if (Covers(x, y, x + Bitmap.Width() - 1, y + Bitmap.Height() - 1))
-        Reset();
-     x -= x0;
-     y -= y0;
-     if (ReplacePalette && Covers(x + x0, y + y0, x + x0 + Bitmap.Width() - 1, y + y0 + Bitmap.Height() - 1)) {
+     x -= x0; y -= y0;
+     int w = Bitmap.width; int h = Bitmap.height;
+     int xb = 0; int yb = 0;
+     if (x + w > width)
+        w = width - x;
+     if (y + h > height)
+        h = height - y;
+     if (x < 0)
+        xb = -x;
+     if (y < 0)
+        yb = -y;
+     x += xb; y += yb; w -= xb; h -= yb;
+     AddDirty(x, y, x + w - 1, y + h -1);
+     if (Covers(x + x0, y + y0, x + x0 + Bitmap.Width() - 1, y + y0 + Bitmap.Height() - 1)) {
         Replace(Bitmap);
-        for (int ix = 0; ix < Bitmap.width; ix++) {
-            for (int iy = 0; iy < Bitmap.height; iy++) {
-                if (!Overlay || Bitmap.bitmap[Bitmap.width * iy + ix] != 0)
-                   SetIndex(x + ix, y + iy, Bitmap.bitmap[Bitmap.width * iy + ix]);
-                }
-            }
+        if ((!ReplacePalette) & ((ColorFg != 0) | (ColorBg != 0))) {
+           SetColor(0, ColorBg);
+           SetColor(1, ColorFg);
+           }
+        if (!Overlay) {
+           tIndex *bmDest = bitmap + y * width + x;
+           tIndex *bmSrc = Bitmap.bitmap + yb * Bitmap.width + xb;
+           for (int iy = 0; iy < h; iy++) {
+               memcpy(bmDest, bmSrc, w);
+               bmDest += width; bmSrc += Bitmap.width;
+               }
+           }
+        else {
+           int srcOffset = Bitmap.width * yb + xb;
+           for (int iy = 0; iy < h; iy++) {
+               for (int ix = 0; ix < w; ix++) {
+                   if (Bitmap.bitmap[srcOffset + ix] != 0)
+                      SetIndexRaw(x + ix, y + iy, Bitmap.bitmap[srcOffset + ix]);
+                   }
+               srcOffset += Bitmap.width;
+               }
+           }
         }
      else {
         tIndexes Indexes;
         Take(Bitmap, &Indexes, ColorFg, ColorBg);
-        for (int ix = 0; ix < Bitmap.width; ix++) {
-            for (int iy = 0; iy < Bitmap.height; iy++) {
-                if (!Overlay || Bitmap.bitmap[Bitmap.width * iy + ix] != 0)
-                   SetIndex(x + ix, y + iy, Indexes[int(Bitmap.bitmap[Bitmap.width * iy + ix])]);
+        int srcOffset = Bitmap.width * yb + xb;
+        for (int iy = 0; iy < h; iy++) {
+            for (int ix = 0; ix < w; ix++) {
+                if ((!Overlay) | (Bitmap.bitmap[srcOffset + ix] != 0))
+                   SetIndexRaw(x + ix, y + iy, Indexes[int(Bitmap.bitmap[srcOffset + ix])]);
                 }
+            srcOffset += Bitmap.width;
             }
         }
      }
 }
-//M7X0 BEGIN AK
+
 void cBitmap::DrawText(int x, int y, const char *s, tColor ColorFg, tColor ColorBg, const cFont *Font, int Width, int Height, int Alignment)
 {
   if (bitmap) {
