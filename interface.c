@@ -38,7 +38,9 @@ eKeys cInterface::GetKey(bool Wait)
         Wait = false;
      }
   if (!cRemote::IsLearning())
-     return cRemote::Get(Wait ? 1000 : 10);
+//M7X0 BEGIN AK
+     return cRemote::Get(Wait ? 1000 : 250);
+//M7X0 END AK
   else
      return kNone;
 }
