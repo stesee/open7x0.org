@@ -672,25 +672,21 @@ cString TimeToString(time_t t)
      }
   return "???";
 }
-
+//M7X0 BEGIN AK
 cString DateString(time_t t)
 {
-  char buf[32];
   struct tm tm_r;
-  tm *tm = localtime_r(&t, &tm_r);
-  char *p = stpcpy(buf, WeekDayName(tm->tm_wday));
-  *p++ = ' ';
-  strftime(p, sizeof(buf) - (p - buf), "%d.%m.%Y", tm);
-  return buf;
+  localtime_r(&t, &tm_r);
+  return cString::sprintf("%s %02d.%02d.%04d", *WeekDayName(tm_r.tm_wday),tm_r.tm_mday,tm_r.tm_mon+1,tm_r.tm_year+1900);;
 }
 
 cString TimeString(time_t t)
 {
-  char buf[25];
   struct tm tm_r;
-  strftime(buf, sizeof(buf), "%R", localtime_r(&t, &tm_r));
-  return buf;
+  localtime_r(&t, &tm_r);
+  return cString::sprintf("%02d:%02d",tm_r.tm_hour,tm_r.tm_min);
 }
+//M7X0 END AK
 // --- RgbToJpeg -------------------------------------------------------------
 //M7X0 BEGIN AK
 #ifdef WITH_LIBJPEG

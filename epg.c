@@ -116,6 +116,9 @@ cEvent::cEvent(tEventID EventID)
   duration = 0;
   vps = 0;
   SetSeen();
+//M7X0 BEGIN AK
+  cachedDateStringLang = -1;
+//M7X0 END AK
 }
 
 cEvent::~cEvent()
@@ -194,6 +197,11 @@ void cEvent::SetStartTime(time_t StartTime)
      startTime = StartTime;
      if (schedule)
         schedule->HashEvent(this);
+//M7X0 BEGIN AK
+     cachedDateString = DateString(startTime);
+     cachedTimeString = TimeString(startTime);
+     cachedDateStringLang = Setup.OSDLanguage;
+//M7X0 END AK
      }
 }
 
@@ -236,12 +244,19 @@ bool cEvent::IsRunning(bool OrAboutToStart) const
 
 cString cEvent::GetDateString(void) const
 {
-  return DateString(startTime);
+//M7X0 BEGIN AK
+  if (cachedDateStringLang != Setup.OSDLanguage) {
+     cachedDateString = DateString(startTime);
+     }
+  return cachedDateString;
+//M7X0 END AK
 }
 
 cString cEvent::GetTimeString(void) const
 {
-  return TimeString(startTime);
+//M7X0 BEGIN AK
+  return cachedTimeString;
+//M7X0 END AK
 }
 
 cString cEvent::GetEndTimeString(void) const

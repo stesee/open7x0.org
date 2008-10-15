@@ -66,6 +66,11 @@ private:
   int duration;            // Duration of this event in seconds
   time_t vps;              // Video Programming Service timestamp (VPS, aka "Programme Identification Label", PIL)
   time_t seen;             // When this event was last seen in the data stream
+//M7X0 BEGIN AK
+  mutable int cachedDateStringLang;
+  mutable cString cachedTimeString;
+  mutable cString cachedDateString;
+//M7X0 END AK
 public:
   cEvent(tEventID EventID);
   ~cEvent();
