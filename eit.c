@@ -327,7 +327,7 @@ cEitFilter::cEitFilter(void)
 // m7x0 can only handle one filter per pid
 // Lets only filter 0x40-0x5f m7x0 seems not to like too many filters
 // Is 0x6x really used? (hopefully not)
-  Set(0x12, 0x40, 0xE0);   // event info, actual(0x4E)/other(0x4F) TS, present/following
+  Set(0x12, 0x40, 0xE0, 5);   // event info, actual(0x4E)/other(0x4F) TS, present/following
  									// event info, actual TS, schedule(0x50)/schedule for future days(0x5X)
 									// event info, other  TS, schedule(0x60)/schedule for future days(0x6X)
 //M7X0 END AK

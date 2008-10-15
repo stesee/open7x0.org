@@ -45,14 +45,16 @@ cFilterData::cFilterData(void)
   tid = 0;
   mask = 0;
   sticky = false;
+  timeout = DEFAULT_FILTER_TIMEOUT;
 }
 
-cFilterData::cFilterData(u_short Pid, u_char Tid, u_char Mask, bool Sticky)
+cFilterData::cFilterData(u_short Pid, u_char Tid, u_char Mask, bool Sticky, int Timeout)
 {
   pid = Pid;
   tid = Tid;
   mask = Mask;
   sticky = Sticky;
+  timeout = Timeout;
 }
 
 bool cFilterData::Is(u_short Pid, u_char Tid, u_char Mask)
@@ -134,14 +136,14 @@ bool cFilter::Matches(u_short Pid, u_char Tid)
   return false;
 }
 
-void cFilter::Set(u_short Pid, u_char Tid, u_char Mask)
+void cFilter::Set(u_short Pid, u_char Tid, u_char Mask, int Timeout)
 {
-  Add(Pid, Tid, Mask, true);
+  Add(Pid, Tid, Mask, true, Timeout);
 }
 
-void cFilter::Add(u_short Pid, u_char Tid, u_char Mask, bool Sticky)
+void cFilter::Add(u_short Pid, u_char Tid, u_char Mask, bool Sticky, int Timeout)
 {
-  cFilterData *fd = new cFilterData(Pid, Tid, Mask, Sticky);
+  cFilterData *fd = new cFilterData(Pid, Tid, Mask, Sticky, Timeout);
   data.Add(fd);
   if (sectionHandler && on)
      sectionHandler->Add(fd);

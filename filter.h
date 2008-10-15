@@ -12,7 +12,7 @@
 
 #include <sys/types.h>
 #include "tools.h"
-
+#define DEFAULT_FILTER_TIMEOUT 180
 class cSectionSyncer {
 private:
   int lastVersion;
@@ -29,8 +29,9 @@ public:
   u_char tid;
   u_char mask;
   bool sticky;
+  int timeout;
   cFilterData(void);
-  cFilterData(u_short Pid, u_char Tid, u_char Mask, bool Sticky);
+  cFilterData(u_short Pid, u_char Tid, u_char Mask, bool Sticky, int Timeout);
   bool Is(u_short Pid, u_char Tid, u_char Mask);
   bool Matches(u_short Pid, u_char Tid);
   };
@@ -74,9 +75,9 @@ protected:
        ///< Returns the channel of the data delivered to this filter.
   bool Matches(u_short Pid, u_char Tid);
        ///< Indicates whether this filter wants to receive data from the given Pid/Tid.
-  void Set(u_short Pid, u_char Tid, u_char Mask = 0xFF);
+  void Set(u_short Pid, u_char Tid, u_char Mask = 0xFF, int Timeout = DEFAULT_FILTER_TIMEOUT);
        ///< Sets the given filter data by calling Add() with Sticky = true.
-  void Add(u_short Pid, u_char Tid, u_char Mask = 0xFF, bool Sticky = false);
+  void Add(u_short Pid, u_char Tid, u_char Mask = 0xFF, bool Sticky = false, int Timeout = DEFAULT_FILTER_TIMEOUT);
        ///< Adds the given filter data to this filter.
        ///< If Sticky is true, this will survive a status change, otherwise
        ///< it will be automatically deleted.

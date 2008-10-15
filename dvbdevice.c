@@ -2891,11 +2891,10 @@ int cDvbDevice::OpenFilter(u_short Pid, u_char Tid, u_char Mask)
 //M7X0 BEGIN AK
 // CRC checking won't work, driver delivers CRC-Invalid sections
 // What the heck is this flag for as additional checking is need with or without it.
-     sctFilterParams.flags = DMX_IMMEDIATE_START; //| DMX_CHECK_CRC;
+     sctFilterParams.flags = DMX_IMMEDIATE_START | DMX_CHECK_CRC;
 
      sctFilterParams.filter.filter[0] = Tid;
      sctFilterParams.filter.mask[0] = Mask;
-     CHECK(ioctl(f, DMX_SET_BUFFER_SIZE,8192));
 //M7X0 END AK
      if (ioctl(f, DMX_SET_FILTER, &sctFilterParams) >= 0)
         return f;

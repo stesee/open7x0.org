@@ -18,6 +18,9 @@
 class cFilterHandle : public cListObject {
 public:
   cFilterData filterData;
+//M7X0 BEGIN AK
+  time_t lastData;
+//M7X0 END AK
   int handle;
   int used;
   cFilterHandle(const cFilterData &FilterData);
@@ -89,6 +92,9 @@ void cSectionHandler::Add(const cFilterData *FilterData)
      if (handle >= 0) {
         fh = new cFilterHandle(*FilterData);
         fh->handle = handle;
+//M7X0 BEGIN AK
+        fh->lastData = time(NULL);
+//M7X0 END AK
         filterHandles.Add(fh);
         }
      }
@@ -189,47 +195,58 @@ void cSectionHandler::Action(void)
            bool DeviceHasLock = device->HasLock();
            if (!DeviceHasLock)
               cCondWait::SleepMs(100);
+//M7X0 BEGIN AK
+              time_t now = time(NULL);
            for (int i = 0; i < NumFilters; i++) {
-//M7X0 BEGIN AK
+
+               cFilterHandle *fh = NULL;
+               LOCK_THREAD;
+               if (statusCount != oldStatusCount)
+                  break;
+
+               for (fh = filterHandles.First(); fh; fh = filterHandles.Next(fh)) {
+                   if (pfd[i].fd == fh->handle)
+                      break;
+                   }
+
+               if (!fh)
+                  continue;
+
                if ( pfd[i].revents & (POLLPRI | POLLIN) ){
-//M7X0 END AK
-                  cFilterHandle *fh = NULL;
-                  LOCK_THREAD;
-                  if (statusCount != oldStatusCount)
-                     break;
-                  for (fh = filterHandles.First(); fh; fh = filterHandles.Next(fh)) {
-                      if (pfd[i].fd == fh->handle)
-                         break;
-                      }
-                  if (fh) {
-                     // Read section data:
-//M7X0 BEGIN AK
-                     unsigned char buf[8192]; // max. allowed size for any EIT section
+                  // Read section data:
+                  unsigned char buf[8192]; // max. allowed size for any EIT section
 
-                     int r = safe_read(fh->handle, buf, sizeof(buf)) ;
+                  int r = safe_read(fh->handle, buf, sizeof(buf)) ;
+                  fh->lastData = now;
 
-                     if (!DeviceHasLock)
-                        continue; // we do the read anyway, to flush any data that might have come from a different transponder
-                     if (r > 3) { // minimum number of bytes necessary to get section length
-                        int len = (((buf[1] & 0x0F) << 8) | (buf[2] & 0xFF)) + 3;
-                        if (len <= r) {
-//M7X0 END AK
-                           // Distribute data to all attached filters:
-                           int pid = fh->filterData.pid;
-                           int tid = buf[0];
-                           for (cFilter *fi = filters.First(); fi; fi = filters.Next(fi)) {
-                               if (fi->Matches(pid, tid))
-                                  fi->Process(pid, tid, buf, len);
-                               }
-                           }
-                        else if (time(NULL) - lastIncompleteSection > 10) { // log them only every 10 seconds
-                           dsyslog("read incomplete section - len = %d, r = %d", len, r);
-                           lastIncompleteSection = time(NULL);
-                           }
+                  if (!DeviceHasLock)
+                     continue; // we do the read anyway, to flush any data that might have come from a different transponder
+                  if (r > 3) { // minimum number of bytes necessary to get section length
+                     int len = (((buf[1] & 0x0F) << 8) | (buf[2] & 0xFF)) + 3;
+                     if (len <= r) {
+                        // Distribute data to all attached filters:
+                        int pid = fh->filterData.pid;
+                        int tid = buf[0];
+                        for (cFilter *fi = filters.First(); fi; fi = filters.Next(fi)) {
+                            if (fi->Matches(pid, tid))
+                               fi->Process(pid, tid, buf, len);
+                            }
+                        }
+                     else if (now - lastIncompleteSection > 10) { // log them only every 10 seconds
+                        dsyslog("read incomplete section - len = %d, r = %d", len, r);
+                        lastIncompleteSection = now;
                         }
                      }
+                  }
+               else if (on && fh->filterData.timeout + fh->lastData < now) {
+                  dsyslog("Section Filter with Pid 0x%x timeouts. Reopen", fh->filterData.pid);
+                  close(fh->handle);
+                  fh->handle = device->OpenFilter(fh->filterData.pid, fh->filterData.tid, fh->filterData.mask);
+                  if (fh->handle >= 0)
+                     fh->lastData = time(NULL);
                   }
                }
            }
         }
 }
+//M7X0 END AK

@@ -68,10 +68,12 @@ bool CRCSection::CheckCRCAndParse() {
 // with valid CRC. CRC-Checking can be dropped.
 // No need to check this any more driver delivers 
 // CRC invalid sections 
-   if (!isCRCValid()) //{
-//		dsyslog("DEBUG: CRC of a section invalid!");
+#if 0
+   if (!isCRCValid()) {
+      dsyslog("DEBUG: CRC of a section invalid!");
       return false;
-//	}
+      }
+#endif
 //M7X0 END AK
    CheckParse();
    return isValid();
