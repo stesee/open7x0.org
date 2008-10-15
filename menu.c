@@ -3215,7 +3215,7 @@ void cDisplayChannel::DisplayChannel(void)
 void cDisplayChannel::DisplayInfo(void)
 {
   if (withInfo && channel) {
-     cSchedulesLock SchedulesLock;
+     cSchedulesLock SchedulesLock(false,200);
      const cSchedules *Schedules = cSchedules::Schedules(SchedulesLock);
      if (Schedules) {
         const cSchedule *Schedule = Schedules->GetSchedule(channel);
