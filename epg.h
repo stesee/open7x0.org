@@ -192,6 +192,19 @@ public:
   const cSchedule *GetSchedule(const cChannel *Channel, bool AddIfMissing = false) const;
   };
 
+class cSchedulesReaderThread : private cThread {
+private:
+  static cSchedulesReaderThread readerThread;
+  bool readLocked;
+
+  cSchedulesReaderThread(void) : cThread("EPG Reader") { }
+  virtual void Action(void) { cSchedules::Read(); }
+public:
+  static cSchedulesReaderThread *getInstance(void) { return &readerThread; }
+  void ReadEPG(void);
+  void SetReadLocked(void) { readLocked = true; }
+  };
+
 void ReportEpgBugFixStats(bool Reset = false);
 
 #endif //__EPG_H

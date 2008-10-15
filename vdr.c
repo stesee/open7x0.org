@@ -634,7 +634,7 @@ int main(int argc, char *argv[])
         cSchedules::SetEpgDataFileName(AddDirectory(EpgDirectory, EpgDataFileName));
      else
         cSchedules::SetEpgDataFileName(EpgDataFileName);
-     cSchedules::Read();
+     cSchedulesReaderThread::getInstance()->ReadEPG();
      }
 
   // DVB interfaces:

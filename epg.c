@@ -1051,6 +1051,7 @@ bool cSchedules::Read(FILE *f)
 {
   cSchedulesLock SchedulesLock(true, 1000);
   cSchedules *s = (cSchedules *)Schedules(SchedulesLock);
+  cSchedulesReaderThread::getInstance()->SetReadLocked();
   if (s) {
      bool OwnFile = f == NULL;
      if (OwnFile) {
@@ -1116,4 +1117,17 @@ const cSchedule *cSchedules::GetSchedule(const cChannel *Channel, bool AddIfMiss
      Channel->schedule = Schedule;
      }
   return Channel->schedule != &DummySchedule? Channel->schedule : NULL;
+}
+
+// --- cSchedulesReaderThread ------------------------------------------------------------
+cSchedulesReaderThread cSchedulesReaderThread::readerThread;
+
+void cSchedulesReaderThread::ReadEPG(void)
+{
+  if (Active())
+     return;
+  readLocked = false;
+  Start();
+  while (!readLocked)
+        cCondWait::SleepMs(10);
 }
