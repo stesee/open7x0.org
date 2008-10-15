@@ -1074,9 +1074,9 @@ bool cSafeFile::Open(void)
   return f != NULL;
 }
 
-bool cSafeFile::Close(void)
+bool cSafeFile::Close(bool ok)
 {
-  bool result = true;
+  bool result = ok;
   if (f) {
      if (ferror(f) != 0) {
         LOG_ERROR_STR(tempName);

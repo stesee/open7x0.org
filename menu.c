@@ -1253,7 +1253,7 @@ public:
   };
 
 cMenuSchedule::cMenuSchedule(void)
-:cOsdMenu("")
+:cOsdMenu(""), schedulesLock(false, 500)
 {
   now = next = false;
   otherChannel = 0;
@@ -3118,12 +3118,16 @@ eOSState cMenuMain::ProcessKey(eKeys Key)
 
 // --- SetTrackDescriptions --------------------------------------------------
 
+static int trackDescriptionsLiveChannel = -1;
+
 static void SetTrackDescriptions(int LiveChannel)
 {
   cDevice::PrimaryDevice()->ClrAvailableTracks(true);
   const cComponents *Components = NULL;
-  cSchedulesLock SchedulesLock;
+  cSchedulesLock SchedulesLock(false, 200);
+  trackDescriptionsLiveChannel = -1;
   if (LiveChannel) {
+     trackDescriptionsLiveChannel = LiveChannel;
      cChannel *Channel = Channels.GetByNumber(LiveChannel);
      if (Channel) {
         const cSchedules *Schedules = cSchedules::Schedules(SchedulesLock);
@@ -3144,6 +3148,7 @@ static void SetTrackDescriptions(int LiveChannel)
         Components = Recording->Info()->Components();
      }
   if (Components) {
+     trackDescriptionsLiveChannel = -1;
      int indexAudio = 0;
      int indexDolby = 0;
      for (int i = 0; i < Components->NumComponents(); i++) {
@@ -3509,6 +3514,8 @@ cDisplayTracks *cDisplayTracks::currentDisplayTracks = NULL;
 cDisplayTracks::cDisplayTracks(void)
 :cOsdObject(true)
 {
+  if (trackDescriptionsLiveChannel != -1)
+     SetTrackDescriptions(trackDescriptionsLiveChannel);
   cDevice::PrimaryDevice()->EnsureAudioTrack();
   SetTrackDescriptions(!cDevice::PrimaryDevice()->Replaying() || cDevice::PrimaryDevice()->Transferring() ? cDevice::CurrentChannel() : 0);
   currentDisplayTracks = this;

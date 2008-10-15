@@ -292,7 +292,7 @@ public:
   ~cSafeFile();
   operator FILE* () { return f; }
   bool Open(void);
-  bool Close(void);
+  bool Close(bool ok = true);
   };
 
 /// cUnbufferedFile is used for large files that are mainly written or read

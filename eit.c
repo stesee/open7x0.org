@@ -347,7 +347,7 @@ void cEitFilter::Process(u_short Pid, u_char Tid, const u_char *Data, int Length
             // that we can set the running status and 'seen' timestamp (well, actually
             // with a read lock we shouldn't be doing that, but it's only integers that
             // get changed, so it should be ok)
-            cSchedulesLock SchedulesLock;
+            cSchedulesLock SchedulesLock(false, 50);
             cSchedules *Schedules = (cSchedules *)cSchedules::Schedules(SchedulesLock);
             if (Schedules)
                cEIT EIT(Schedules, Source(), Tid, Data, true);

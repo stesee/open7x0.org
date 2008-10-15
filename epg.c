@@ -985,8 +985,6 @@ void cSchedules::Cleanup(bool Force)
   if (Force)
      lastDump = 0;
   time_t now = time(NULL);
-  struct tm tm_r;
-  struct tm *ptm = localtime_r(&now, &tm_r);
   if (now - lastCleanup > 3600) {
      isyslog("cleaning up schedules data");
      cSchedulesLock SchedulesLock(true, 1000);
@@ -994,20 +992,25 @@ void cSchedules::Cleanup(bool Force)
      if (s) {
         for (cSchedule *p = s->First(); p; p = s->Next(p))
             p->Cleanup(now);
+        lastCleanup = now;
         }
-     lastCleanup = now;
+     struct tm tm_r;
+     struct tm *ptm = localtime_r(&now, &tm_r);
      if (ptm->tm_hour == 5)
         ReportEpgBugFixStats(true);
      }
   if (epgDataFileName && now - lastDump > 600) {
      cSafeFile f(epgDataFileName);
      if (f.Open()) {
-        Dump(f);
-        f.Close();
+        if (Dump(f)) {
+           lastDump = now;
+           f.Close();
+           }
+        else
+           f.Close(false);
         }
      else
         LOG_ERROR;
-     lastDump = now;
      }
 }
 
@@ -1037,7 +1040,7 @@ bool cSchedules::ClearAll(void)
 
 bool cSchedules::Dump(FILE *f, const char *Prefix, eDumpMode DumpMode, time_t AtTime)
 {
-  cSchedulesLock SchedulesLock;
+  cSchedulesLock SchedulesLock(false, 1000);
   cSchedules *s = (cSchedules *)Schedules(SchedulesLock);
   if (s) {
      for (cSchedule *p = s->First(); p; p = s->Next(p))

@@ -697,8 +697,8 @@ void cTimers::SetEvents(void)
             ti->SetEventFromSchedule(Schedules);
             }
         }
+     lastSetEvents = time(NULL);
      }
-  lastSetEvents = time(NULL);
 }
 
 void cTimers::DeleteExpired(void)

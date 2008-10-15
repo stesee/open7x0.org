@@ -872,7 +872,7 @@ int main(int argc, char *argv[])
                            NeedsTransponder = Timer->Event()->StartTime() - Now < VPSLOOKAHEADTIME * 3600 && !Timer->Event()->SeenWithin(VPSUPTODATETIME);
                            }
                         else {
-                           cSchedulesLock SchedulesLock;
+                           cSchedulesLock SchedulesLock(false, 100);
                            const cSchedules *Schedules = cSchedules::Schedules(SchedulesLock);
                            if (Schedules) {
                               const cSchedule *Schedule = Schedules->GetSchedule(Timer->Channel());
