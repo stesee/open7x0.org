@@ -3604,24 +3604,22 @@ bool cDvbDevice::Flush(int TimeoutMs)
      const uchar *write_data = playBuffer;
 
      int retry_count = 0;
-     while ((playBufferFill >= 0) & (retry_count < 100)) {
+     while ((playBufferFill > 0) & (retry_count < 100)) {
            int r = write(fd_audio, write_data, playBufferFill);
+           retry_count++;
            if (r < 0) {
-              retry_count++;
-              if (errno == EAGAIN) {
+              if ((errno == EBUSY) | (errno == EAGAIN)) {
                  cCondWait::SleepMs(3);
                  continue;
                  }
               if (errno == EINTR)
-               continue;
+                 continue;
               /* Driver returns EPERM if write array too small
                * yet another ugly bug */
-              if ((errno == EBUSY) | (errno == EPERM))
+              if (errno == EPERM)
                  break;
               return false;
               }
-           if (r == 0)
-              break;
            write_data += r;
            playBufferFill -= r;
            }
