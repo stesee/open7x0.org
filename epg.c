@@ -247,6 +247,7 @@ cString cEvent::GetDateString(void) const
 //M7X0 BEGIN AK
   if (cachedDateStringLang != Setup.OSDLanguage) {
      cachedDateString = DateString(startTime);
+     cachedDateStringLang = Setup.OSDLanguage;
      }
   return cachedDateString;
 //M7X0 END AK
