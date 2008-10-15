@@ -496,7 +496,7 @@ void cBitmap::SetIndex(int x, int y, tIndex Index)
         }
      }
 }
-
+//M7X0 BEGIN AK
 void cBitmap::AddDirty(int xmin, int ymin, int xmax, int ymax)
 {
   if (xmin >= 0     && dirtyX1 > xmin) dirtyX1=xmin;
@@ -504,7 +504,7 @@ void cBitmap::AddDirty(int xmin, int ymin, int xmax, int ymax)
   if (xmax < width  && dirtyX2 < xmax) dirtyX2=xmax;
   if (ymax < height && dirtyY2 < ymax) dirtyY2=ymax;
 }
-
+//M7X0 END AK
 void cBitmap::DrawPixel(int x, int y, tColor Color)
 {
   x -= x0;
@@ -541,70 +541,76 @@ void cBitmap::DrawBitmap(int x, int y, const cBitmap &Bitmap, tColor ColorFg, tC
         }
      }
 }
-
+//M7X0 BEGIN AK
 void cBitmap::DrawText(int x, int y, const char *s, tColor ColorFg, tColor ColorBg, const cFont *Font, int Width, int Height, int Alignment)
 {
   if (bitmap) {
      int w = Font->Width(s);
      int h = Font->Height();
-     int limit = 0;
-     if (Width || Height) {
-        int cw = Width ? Width : w;
-        int ch = Height ? Height : h;
-        if (!Intersects(x, y, x + cw - 1, y + ch - 1))
-           return;
-        if (ColorBg != clrTransparent)
-           DrawRectangle(x, y, x + cw - 1, y + ch - 1, ColorBg);
-        limit = x + cw - x0;
-        if (Width) {
-           if ((Alignment & taLeft) != 0)
-              ;
-           else if ((Alignment & taRight) != 0) {
-              if (w < Width)
-                 x += Width - w;
-              }
-           else { // taCentered
-              if (w < Width)
-                 x += (Width - w) / 2;
-              }
-           }
-        if (Height) {
-           if ((Alignment & taTop) != 0)
-              ;
-           else if ((Alignment & taBottom) != 0) {
-              if (h < Height)
-                 y += Height - h;
-              }
-           else { // taCentered
-              if (h < Height)
-                 y += (Height - h) / 2;
-              }
+     int x_orig = x;
+     int y_orig = y;
+
+     if (Width) {
+        if (w >= Width)
+           w = Width;
+        else if ((Alignment & taLeft) == 0) {
+           if ((Alignment & taRight) != 0)
+              x += Width - w;
+           else // taCentered
+              x += (Width - w) / 2;
            }
         }
-     else if (!Intersects(x, y, x + w - 1, y + h - 1))
-        return;
+     else
+        Width = w;
+
+     if (Height) {
+        if (h >= Height)
+           h = Height;
+        else if ((Alignment & taTop) == 0) {
+           if ((Alignment & taBottom) != 0)
+              y += Height - h;
+           else  // taCentered
+              y += (Height - h) / 2;
+           }
+        }
+     else
+        Height = h;
+
+     if (ColorBg != clrTransparent)
+        DrawRectangle(x_orig, y_orig, x_orig + Width - 1, y_orig + Height - 1, ColorBg);
+
      x -= x0;
      y -= y0;
+     int limit = x + w;
+     int x_end = limit;
+     if (x_end > width)
+        x_end = width;
+     int y_end = y + h;
+     if (y_end > height)
+        y_end = height;
+     if ((y_end <= 0) | (x_end <= 0) | (x >= x_end) | (y >= y_end))
+        return;
+     int row_s = 0;
+     if (y < 0)
+        row_s = -y;
+     AddDirty(x >= 0 ? x : 0, y + row_s , x_end - 1, y_end - 1);
+
      tIndex fg = Index(ColorFg);
-     tIndex bg = (ColorBg != clrTransparent) ? Index(ColorBg) : 0;
-     while (s && *s) {
+     while ((s && *s) & (x < x_end)) {
            const cFont::tCharData *CharData = Font->CharData(*s++);
-           if (limit && int(x + CharData->width) > limit)
+           if (int(x + CharData->width) > limit)
               break; // we don't draw partial characters
            if (int(x + CharData->width) > 0) {
-              AddDirty(x, y, x + CharData->width - 1, y + h - 1);
-              for (int row = 0; row < h; row++) {
+              for (int row = row_s; y + row < y_end; row++) {
                   cFont::tPixelData PixelData = CharData->lines[row];
-                  for (int col = CharData->width; col-- > 0; ) {
-                      if (ColorBg != clrTransparent || (PixelData & 1))
-                         SetIndexRaw(x + col, y + row, (PixelData & 1) ? fg : bg);
+                  for (int col = CharData->width - 1;(x + col >= 0) & (PixelData != 0); col--) {
+                      if ((PixelData & 1) & (x + col < x_end))
+                         SetIndexRaw(x + col, y + row, fg);
                       PixelData >>= 1;
                       }
                   }
               }
            x += CharData->width;
-           if (x > width - 1)
-              break;
            }
      }
 }
@@ -632,7 +638,7 @@ void cBitmap::DrawRectangle(int x1, int y1, int x2, int y2, tColor Color)
          }
      }
 }
-
+//M7X0 END AK
 void cBitmap::DrawEllipse(int x1, int y1, int x2, int y2, tColor Color, int Quadrants)
 {
   if (!Intersects(x1, y1, x2, y2))
