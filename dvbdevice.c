@@ -2703,6 +2703,7 @@ void cDvbDevice::SetTvSettings(bool settv){
       CHECK(ioctl(avs, AVSWCMD_TV_OFF, 0));
       CHECK(ioctl(avs, AVSWCMD_TV_VCR, 0));
       close(avs);
+      SetVCRMode(Setup.VCRMode);
     }
 }
 
@@ -3924,7 +3925,8 @@ int cDvbDevice::PlayAudioOnly(const uchar *Data, int Length, uchar Id)
      }
 
   const uchar *write_data = Data + pay_off;
-  int write_length = Length - pay_off;
+  //int write_length = Length - pay_off;
+  int write_length = KILOBYTE(32); 
   if (write_length <= 0) {
      esyslog("Invalid audio packet");
      errno = EINVAL;
