@@ -742,10 +742,12 @@ const cEvent *cSchedule::GetEvent(tEventID EventID, time_t StartTime) const
 {
   // Returns the event info with the given StartTime or, if no actual StartTime
   // is given, the one with the given EventID.
-  if (StartTime > 0) // 'StartTime < 0' is apparently used with NVOD channels
-     return eventsHashStartTime.Get(StartTime);
-  else
-     return eventsHashID.Get(EventID);
+  if (StartTime > 0) { // 'StartTime < 0' is apparently used with NVOD channels
+     cEvent *ev = eventsHashStartTime.Get(StartTime);
+     if (ev)
+        return ev;
+     }
+  return eventsHashID.Get(EventID);
 }
 
 const cEvent *cSchedule::GetEventAround(time_t Time) const

@@ -34,15 +34,16 @@ cEIT::cEIT(cSchedules *Schedules, int Source, u_char Tid, const u_char *Data, bo
      return;
 
   tChannelID channelID(Source, getOriginalNetworkId(), getTransportStreamId(), getServiceId());
-//M7X0 BEGIN AK
-  eEpgMode em = EpgModes.GetModeByChannelID(&channelID)->GetMode();
-  if (em == emNone || em == emForeign ||
-        (em == emNowNext && Tid != 0x4e && Tid != 0x4f))
-     return;
-//M7X0 END AK
+
   cChannel *channel = Channels.GetByChannelID(channelID, true);
   if (!channel)
      return; // only collect data for known channels
+
+  //M7X0 BEGIN AK
+  eEpgMode em = EpgModes.GetModeByChannelID(&channelID)->GetMode();
+  if ((em == emNone) | ((em == emNowNext) & (Tid != 0x4e) & (Tid != 0x4f)))
+     return;
+//M7X0 END AK
 
   cSchedule *pSchedule = (cSchedule *)Schedules->GetSchedule(channel, true);
 
@@ -56,17 +57,20 @@ cEIT::cEIT(cSchedules *Schedules, int Source, u_char Tid, const u_char *Data, bo
   for (SI::Loop::Iterator it; eventLoop.getNext(SiEitEvent, it); ) {
       bool ExternalData = false;
       // Drop bogus events - but keep NVOD reference events, where all bits of the start time field are set to 1, resulting in a negative number.
-      if (SiEitEvent.getStartTime() == 0 || (SiEitEvent.getStartTime() > 0 && SiEitEvent.getDuration() == 0))
+      time_t si_stime = SiEitEvent.getStartTime();
+      time_t si_dur = SiEitEvent.getDuration();
+      if (si_stime == 0 || (si_stime > 0 && si_dur == 0))
          continue;
       Empty = false;
-      if (!SegmentStart)
-         SegmentStart = SiEitEvent.getStartTime();
-      SegmentEnd = SiEitEvent.getStartTime() + SiEitEvent.getDuration();
+      if (((!SegmentStart) | (si_stime < SegmentStart)) & (si_stime > 0))
+         SegmentStart = si_stime;
+      if (si_stime + si_dur > SegmentEnd)
+         SegmentEnd = si_stime + si_dur;
       cEvent *newEvent = NULL;
       cEvent *rEvent = NULL;
-      cEvent *pEvent = (cEvent *)pSchedule->GetEvent(SiEitEvent.getEventId(), SiEitEvent.getStartTime());
+      cEvent *pEvent = (cEvent *)pSchedule->GetEvent(SiEitEvent.getEventId(), si_stime);
       if (!pEvent) {
-         if (OnlyRunningStatus)
+         if (OnlyRunningStatus | (em == emForeign))
             continue;
          // If we don't have that event yet, we create a new one.
          // Otherwise we copy the information into the existing event anyway, because the data might have changed.
@@ -97,11 +101,11 @@ cEIT::cEIT(cSchedules *Schedules, int Source, u_char Tid, const u_char *Data, bo
          else if (Tid == pEvent->TableID() && pEvent->Version() == getVersionNumber())
             continue;
          }
-      if (!ExternalData) {
+      if ((!ExternalData) & (!OnlyRunningStatus)) {
          pEvent->SetEventID(SiEitEvent.getEventId()); // unfortunately some stations use different event ids for the same event in different tables :-(
          pEvent->SetTableID(Tid);
-         pEvent->SetStartTime(SiEitEvent.getStartTime());
-         pEvent->SetDuration(SiEitEvent.getDuration());
+         pEvent->SetStartTime(si_stime);
+         pEvent->SetDuration(si_dur);
          }
       if (newEvent)
          pSchedule->AddEvent(newEvent);
@@ -274,8 +278,7 @@ cEIT::cEIT(cSchedules *Schedules, int Source, u_char Tid, const u_char *Data, bo
      return;
   if (Modified) {
      pSchedule->Sort();
-     if (!HasExternalData)
-        pSchedule->DropOutdated(SegmentStart, SegmentEnd, Tid, getVersionNumber());
+     pSchedule->DropOutdated(SegmentStart, SegmentEnd, Tid, getVersionNumber());
      Schedules->SetModified(pSchedule);
      }
 }
