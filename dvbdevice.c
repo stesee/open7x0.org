@@ -220,17 +220,19 @@ bool cDvbTuner::SetFrontend(void)
 
   dvb_frontend_parameters Frontend;
   dvb_set_ofdm_parameters ofdm_Frontend;
+  dvb_set_qpsk_parameters qpsk_Frontend;
   void *set_arg = &Frontend;
   int set_call = FE_SET_FRONTEND;
 
   memset(&Frontend, 0, sizeof(Frontend));
   memset(&ofdm_Frontend, 0, sizeof(ofdm_Frontend));
+  memset(&qpsk_Frontend, 0, sizeof(qpsk_Frontend));
 
   switch (frontendType) {
     case FE_QPSK: { // DVB-S
-
+//M7x0 BEGIN AK
          unsigned int frequency = channel.Frequency();
-
+         int diseqc_idx = 0;
          if (Setup.DiSEqC) {
             cDiseqc *diseqc = Diseqcs.Get(channel.Source(), channel.Frequency(), channel.Polarization());
             if (diseqc) {
@@ -239,20 +241,33 @@ bool cDvbTuner::SetFrontend(void)
                   for (char *CurrentAction = NULL; (da = diseqc->Execute(&CurrentAction)) != cDiseqc::daNone; ) {
                       switch (da) {
                         case cDiseqc::daNone:      break;
-                        case cDiseqc::daToneOff:   CHECK(ioctl(fd_frontend, FE_SET_TONE, SEC_TONE_OFF)); break;
-                        case cDiseqc::daToneOn:    CHECK(ioctl(fd_frontend, FE_SET_TONE, SEC_TONE_ON)); break;
-                        case cDiseqc::daVoltage13: CHECK(ioctl(fd_frontend, FE_SET_VOLTAGE, SEC_VOLTAGE_13)); break;
-                        case cDiseqc::daVoltage18: CHECK(ioctl(fd_frontend, FE_SET_VOLTAGE, SEC_VOLTAGE_18)); break;
-                        case cDiseqc::daMiniA:     CHECK(ioctl(fd_frontend, FE_DISEQC_SEND_BURST, SEC_MINI_A)); break;
-                        case cDiseqc::daMiniB:     CHECK(ioctl(fd_frontend, FE_DISEQC_SEND_BURST, SEC_MINI_B)); break;
+                        case cDiseqc::daToneOff:
+                             qpsk_Frontend.tone = SEC_TONE_OFF;
+                             break;
+                        case cDiseqc::daToneOn:
+                             qpsk_Frontend.tone = SEC_TONE_OFF;
+                             break;
+                        case cDiseqc::daVoltage13:
+                             qpsk_Frontend.voltage = SEC_VOLTAGE_13;
+                             break;
+                        case cDiseqc::daVoltage18:
+                             qpsk_Frontend.voltage = SEC_VOLTAGE_18;
+                             break;
+                        case cDiseqc::daMiniA:
+                             qpsk_Frontend.toneburst = SEC_MINI_A + 1;
+                             break;
+                        case cDiseqc::daMiniB:
+                             qpsk_Frontend.toneburst = SEC_MINI_B + 1;
+                             break;
                         case cDiseqc::daCodes: {
                              int n = 0;
                              uchar *codes = diseqc->Codes(n);
-                             if (codes) {
-                                struct dvb_diseqc_master_cmd cmd;
-                                memcpy(cmd.msg, codes, min(n, int(sizeof(cmd.msg))));
-                                cmd.msg_len = n;
-                                CHECK(ioctl(fd_frontend, FE_DISEQC_SEND_MASTER_CMD, &cmd));
+                             if ((codes != NULL) & (diseqc_idx < 5)) {
+                                qpsk_Frontend.diseqc[diseqc_idx].msg_len =
+                                    min(n, int(sizeof(qpsk_Frontend.diseqc[diseqc_idx].msg)));
+                                memcpy(qpsk_Frontend.diseqc[diseqc_idx].msg, codes,
+                                       qpsk_Frontend.diseqc[diseqc_idx].msg_len);
+                                diseqc_idx++;
                                 }
                              }
                              break;
@@ -268,35 +283,26 @@ bool cDvbTuner::SetFrontend(void)
                }
             }
          else {
-            int tone = SEC_TONE_OFF;
-
             if (frequency < (unsigned int)Setup.LnbSLOF) {
                frequency -= Setup.LnbFrequLo;
-               tone = SEC_TONE_OFF;
+               qpsk_Frontend.tone = SEC_TONE_OFF;
                }
             else {
                frequency -= Setup.LnbFrequHi;
-               tone = SEC_TONE_ON;
+               qpsk_Frontend.tone = SEC_TONE_ON;
                }
-            int volt = (channel.Polarization() == 'v' || channel.Polarization() == 'V' || channel.Polarization() == 'r' || channel.Polarization() == 'R') ? SEC_VOLTAGE_13 : SEC_VOLTAGE_18;
-            CHECK(ioctl(fd_frontend, FE_SET_VOLTAGE, volt));
-            CHECK(ioctl(fd_frontend, FE_SET_TONE, tone));
+            char pol = channel.Polarization();
+            qpsk_Frontend.voltage =  ((pol == 'v') | (pol == 'V') |
+                                      (pol == 'r') | (pol == 'R')) ?
+                                     SEC_VOLTAGE_13 : SEC_VOLTAGE_18;
             }
 
          frequency = abs(frequency); // Allow for C-band, where the frequency is less than the LOF
-         Frontend.frequency = frequency * 1000UL;
-//M7x0 BEGIN AK
-#ifndef USE_TUNER_AUTOVALUES
-         Frontend.inversion = fe_spectral_inversion_t(channel.Inversion());
-#else
-         Frontend.inversion = INVERSION_AUTO;
-#endif
-         Frontend.u.qpsk.symbol_rate = channel.Srate() * 1000UL;
-#ifndef USE_TUNER_AUTOVALUES
-         Frontend.u.qpsk.fec_inner = fe_code_rate_t(channel.CoderateH());
-#else
-         Frontend.u.qpsk.fec_inner = FEC_AUTO;
-#endif
+         qpsk_Frontend.frequency = frequency * 1000UL;
+         qpsk_Frontend.symbol_rate = channel.Srate() * 1000UL;
+         qpsk_Frontend.fec_inner = FEC_AUTO;
+         set_call = FE_SET_QPSK;
+         set_arg = &qpsk_Frontend;
 
          tuneTimeout = DVBS_TUNE_TIMEOUT;
          lockTimeout = DVBS_LOCK_TIMEOUT;
