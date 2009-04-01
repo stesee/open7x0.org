@@ -288,7 +288,7 @@ struct dvb_set_qpsk_parameters {
 	__u8 msg_len;
 	__u8 unknown;
    } diseqc[5];
-__u32 unknown10[7];
+__u8 unknown10[28];
 };
 
 #define FE_SET_OFDM 0x31000009

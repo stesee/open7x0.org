@@ -100,7 +100,6 @@ private:
   fe_type_t frontendType;
   cCiHandler *ciHandler;
   cChannel channel;
-  const char *diseqcCommands;
   eTunerStatus tunerStatus;
   cMutex mutex;
   cCondVar locked;
@@ -125,7 +124,6 @@ cDvbTuner::cDvbTuner(int Fd_Frontend, int CardIndex, fe_type_t FrontendType, cCi
   tuneTimeout = 0;
   lockTimeout = 0;
   lastTimeoutReport = 0;
-  diseqcCommands = NULL;
   tunerStatus = tsIdle;
   if (frontendType == FE_QPSK)
      CHECK(ioctl(fd_frontend, FE_SET_VOLTAGE, SEC_VOLTAGE_13)); // must explicitly turn on LNB power
@@ -217,78 +215,26 @@ static unsigned int FrequencyToHz(unsigned int f)
 
 bool cDvbTuner::SetFrontend(void)
 {
-
   dvb_frontend_parameters Frontend;
   dvb_set_ofdm_parameters ofdm_Frontend;
   dvb_set_qpsk_parameters qpsk_Frontend;
-  uchar dummy[256];
   void *set_arg = &Frontend;
   int set_call = FE_SET_FRONTEND;
-
-  memset(&Frontend, 0, sizeof(Frontend));
-  memset(&ofdm_Frontend, 0, sizeof(ofdm_Frontend));
-  memset(&qpsk_Frontend, 0, sizeof(qpsk_Frontend));
-  memset(dummy, 0, 256);
-  qpsk_Frontend.unknown2 = (__u32) dummy;
-  qpsk_Frontend.unknown4 = -1;
-  qpsk_Frontend.unknown10[3] = 0x98;
 
   switch (frontendType) {
     case FE_QPSK: { // DVB-S
 //M7x0 BEGIN AK
+         memset(&qpsk_Frontend, 0, sizeof(qpsk_Frontend));
          unsigned int frequency = channel.Frequency();
-         int diseqc_idx = 0;
-         if (Setup.DiSEqC) {
-            cDiseqc *diseqc = Diseqcs.Get(channel.Source(), channel.Frequency(), channel.Polarization());
-            if (diseqc) {
-               if (diseqc->Commands() && (!diseqcCommands || strcmp(diseqcCommands, diseqc->Commands()) != 0)) {
-                  cDiseqc::eDiseqcActions da;
-                  for (char *CurrentAction = NULL; (da = diseqc->Execute(&CurrentAction)) != cDiseqc::daNone; ) {
-                      switch (da) {
-                        case cDiseqc::daNone:      break;
-                        case cDiseqc::daToneOff:
-                             qpsk_Frontend.tone = SEC_TONE_OFF;
-                             break;
-                        case cDiseqc::daToneOn:
-                             qpsk_Frontend.tone = SEC_TONE_ON;
-                             break;
-                        case cDiseqc::daVoltage13:
-                             qpsk_Frontend.voltage = SEC_VOLTAGE_13;
-                             break;
-                        case cDiseqc::daVoltage18:
-                             qpsk_Frontend.voltage = SEC_VOLTAGE_18;
-                             break;
-                        case cDiseqc::daMiniA:
-                             qpsk_Frontend.toneburst = SEC_MINI_A;
-                             break;
-                        case cDiseqc::daMiniB:
-                             qpsk_Frontend.toneburst = SEC_MINI_B;
-                             break;
-                        case cDiseqc::daCodes: {
-                             int n = 0;
-                             uchar *codes = diseqc->Codes(n);
-                             if ((codes != NULL) & (diseqc_idx < 5)) {
-                                qpsk_Frontend.diseqc[diseqc_idx].diseqc_mode = 1;
-                                qpsk_Frontend.diseqc[diseqc_idx].msg_len =
-                                    min(n, int(sizeof(qpsk_Frontend.diseqc[diseqc_idx].msg)));
-                                memcpy(qpsk_Frontend.diseqc[diseqc_idx].msg, codes,
-                                       qpsk_Frontend.diseqc[diseqc_idx].msg_len);
-                                diseqc_idx++;
-                                }
-                             }
-                             break;
-                        }
-                      }
-                  diseqcCommands = diseqc->Commands();
-                  }
-               frequency -= diseqc->Lof();
-               }
-            else {
-               esyslog("ERROR: no DiSEqC parameters found for channel %d", channel.Number());
-               return false;
-               }
-            }
-         else {
+         tuneTimeout = DVBS_TUNE_TIMEOUT;
+         lockTimeout = DVBS_LOCK_TIMEOUT;
+
+         qpsk_Frontend.symbol_rate = channel.Srate();
+         qpsk_Frontend.fec_inner = FEC_AUTO;
+         set_call = FE_SET_QPSK;
+         set_arg = &qpsk_Frontend;
+
+         if (!Setup.DiSEqC) {
             if (frequency < (unsigned int)Setup.LnbSLOF) {
                frequency -= Setup.LnbFrequLo;
                qpsk_Frontend.tone = SEC_TONE_OFF;
@@ -301,21 +247,63 @@ bool cDvbTuner::SetFrontend(void)
             qpsk_Frontend.voltage =  ((pol == 'v') | (pol == 'V') |
                                       (pol == 'r') | (pol == 'R')) ?
                                      SEC_VOLTAGE_13 : SEC_VOLTAGE_18;
+            frequency = abs(frequency); // Allow for C-band, where the frequency is less than the LOF
+            qpsk_Frontend.frequency = frequency * 1000UL;
+            break;
             }
 
-         frequency = abs(frequency); // Allow for C-band, where the frequency is less than the LOF
-         qpsk_Frontend.frequency = frequency * 1000UL;
-         qpsk_Frontend.symbol_rate = channel.Srate();
-         qpsk_Frontend.fec_inner = FEC_AUTO;
-         set_call = FE_SET_QPSK;
-         set_arg = &qpsk_Frontend;
-
-         tuneTimeout = DVBS_TUNE_TIMEOUT;
-         lockTimeout = DVBS_LOCK_TIMEOUT;
+         int diseqc_idx = 0;
+         cDiseqc *diseqc = Diseqcs.Get(channel.Source(), channel.Frequency(), channel.Polarization());
+         if (diseqc) {
+            cDiseqc::eDiseqcActions da;
+            for (char *CurrentAction = NULL; (da = diseqc->Execute(&CurrentAction)) != cDiseqc::daNone; ) {
+                switch (da) {
+                  case cDiseqc::daNone:      break;
+                  case cDiseqc::daToneOff:
+                       qpsk_Frontend.tone = SEC_TONE_OFF;
+                       break;
+                  case cDiseqc::daToneOn:
+                       qpsk_Frontend.tone = SEC_TONE_ON;
+                       break;
+                  case cDiseqc::daVoltage13:
+                       qpsk_Frontend.voltage = SEC_VOLTAGE_13;
+                       break;
+                  case cDiseqc::daVoltage18:
+                       qpsk_Frontend.voltage = SEC_VOLTAGE_18;
+                       break;
+                  case cDiseqc::daMiniA:
+                       qpsk_Frontend.toneburst = SEC_MINI_A;
+                       break;
+                  case cDiseqc::daMiniB:
+                       qpsk_Frontend.toneburst = SEC_MINI_B;
+                       break;
+                  case cDiseqc::daCodes: {
+                       int n = 0;
+                       uchar *codes = diseqc->Codes(n);
+                       if ((codes != NULL) & (diseqc_idx < 5)) {
+                          qpsk_Frontend.diseqc[diseqc_idx].diseqc_mode = 2;
+                          qpsk_Frontend.diseqc[diseqc_idx].msg_len =
+                             min(n, int(sizeof(qpsk_Frontend.diseqc[diseqc_idx].msg)));
+                          memcpy(qpsk_Frontend.diseqc[diseqc_idx].msg, codes,
+                                qpsk_Frontend.diseqc[diseqc_idx].msg_len);
+                          diseqc_idx++;
+                          }
+                       }
+                       break;
+                  }
+                }
+            frequency -= diseqc->Lof();
+            frequency = abs(frequency); // Allow for C-band, where the frequency is less than the LOF
+            qpsk_Frontend.frequency = frequency * 1000UL;
+            }
+         else {
+            esyslog("ERROR: no DiSEqC parameters found for channel %d", channel.Number());
+            return false;
+            }
          }
          break;
     case FE_QAM: { // DVB-C
-
+         memset(&Frontend, 0, sizeof(Frontend));
          // Frequency and symbol rate:
 
          Frontend.frequency = FrequencyToHz(channel.Frequency());
@@ -338,7 +326,7 @@ bool cDvbTuner::SetFrontend(void)
          }
          break;
     case FE_OFDM: { // DVB-T
-
+         memset(&ofdm_Frontend, 0, sizeof(ofdm_Frontend));
          // Frequency and OFDM paramaters:
          set_call = FE_SET_OFDM;
          set_arg = &ofdm_Frontend;
@@ -390,7 +378,6 @@ void cDvbTuner::Action(void)
           case tsTuned:
                if (Timer.TimedOut()) {
                   tunerStatus = tsSet;
-                  diseqcCommands = NULL;
                   if (time(NULL) - lastTimeoutReport > 60) { // let's not get too many of these
                      isyslog("frontend %d timed out while tuning to channel %d, tp %d", cardIndex, channel.Number(), channel.Transponder());
                      lastTimeoutReport = time(NULL);
@@ -400,7 +387,6 @@ void cDvbTuner::Action(void)
           case tsLocked:
                if (Status & FE_REINIT) {
                   tunerStatus = tsSet;
-                  diseqcCommands = NULL;
                   isyslog("frontend %d was reinitialized", cardIndex);
                   lastTimeoutReport = 0;
                   continue;
