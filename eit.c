@@ -52,6 +52,7 @@ cEIT::cEIT(cSchedules *Schedules, int Source, u_char Tid, const u_char *Data, bo
   bool HasExternalData = false;
   time_t SegmentStart = 0;
   time_t SegmentEnd = 0;
+  time_t now = time(NULL);
 
   SI::EIT::Event SiEitEvent;
   for (SI::Loop::Iterator it; eventLoop.getNext(SiEitEvent, it); ) {
@@ -66,11 +67,14 @@ cEIT::cEIT(cSchedules *Schedules, int Source, u_char Tid, const u_char *Data, bo
          SegmentStart = si_stime;
       if (si_stime + si_dur > SegmentEnd)
          SegmentEnd = si_stime + si_dur;
+
       cEvent *newEvent = NULL;
       cEvent *rEvent = NULL;
       cEvent *pEvent = (cEvent *)pSchedule->GetEvent(SiEitEvent.getEventId(), si_stime);
       if (!pEvent) {
-         if (OnlyRunningStatus | (em == emForeign))
+         bool outdated = (si_stime > 0) &
+               (si_stime + si_dur + Setup.EPGLinger * 60 + 3600 < now);
+         if (OnlyRunningStatus | (em == emForeign) | outdated)
             continue;
          // If we don't have that event yet, we create a new one.
          // Otherwise we copy the information into the existing event anyway, because the data might have changed.
