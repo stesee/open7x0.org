@@ -221,14 +221,14 @@ bool cDvbTuner::SetFrontend(void)
   dvb_frontend_parameters Frontend;
   dvb_set_ofdm_parameters ofdm_Frontend;
   dvb_set_qpsk_parameters qpsk_Frontend;
-  static uchar dummy[256];
+  uchar dummy[256];
   void *set_arg = &Frontend;
   int set_call = FE_SET_FRONTEND;
 
   memset(&Frontend, 0, sizeof(Frontend));
   memset(&ofdm_Frontend, 0, sizeof(ofdm_Frontend));
   memset(&qpsk_Frontend, 0, sizeof(qpsk_Frontend));
-  memset(&dummy, 0, 256);
+  memset(dummy, 0, 256);
   qpsk_Frontend.unknown2 = (__u32) dummy;
   qpsk_Frontend.unknown4 = -1;
   qpsk_Frontend.unknown10[3] = 0x98;
