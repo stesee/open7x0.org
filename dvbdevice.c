@@ -245,7 +245,7 @@ bool cDvbTuner::SetFrontend(void)
                              qpsk_Frontend.tone = SEC_TONE_OFF;
                              break;
                         case cDiseqc::daToneOn:
-                             qpsk_Frontend.tone = SEC_TONE_OFF;
+                             qpsk_Frontend.tone = SEC_TONE_ON;
                              break;
                         case cDiseqc::daVoltage13:
                              qpsk_Frontend.voltage = SEC_VOLTAGE_13;
@@ -254,10 +254,10 @@ bool cDvbTuner::SetFrontend(void)
                              qpsk_Frontend.voltage = SEC_VOLTAGE_18;
                              break;
                         case cDiseqc::daMiniA:
-                             qpsk_Frontend.toneburst = SEC_MINI_A + 1;
+                             qpsk_Frontend.toneburst = SEC_MINI_A;
                              break;
                         case cDiseqc::daMiniB:
-                             qpsk_Frontend.toneburst = SEC_MINI_B + 1;
+                             qpsk_Frontend.toneburst = SEC_MINI_B;
                              break;
                         case cDiseqc::daCodes: {
                              int n = 0;
