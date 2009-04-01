@@ -3910,8 +3910,7 @@ int cDvbDevice::PlayAudioOnly(const uchar *Data, int Length, uchar Id)
      }
 
   const uchar *write_data = Data + pay_off;
-  //int write_length = Length - pay_off;
-  int write_length = KILOBYTE(32); 
+  int write_length = Length - pay_off;
   if (write_length <= 0) {
      esyslog("Invalid audio packet");
      errno = EINVAL;
