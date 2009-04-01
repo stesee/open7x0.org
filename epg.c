@@ -117,12 +117,16 @@ cEvent::cEvent(tEventID EventID)
   vps = 0;
   SetSeen();
 //M7X0 BEGIN AK
+ usedByTimers = 0;
   cachedDateStringLang = -1;
 //M7X0 END AK
 }
 
 cEvent::~cEvent()
 {
+  if (usedByTimers) {
+     esyslog("Event used by %d timers about to delete.", usedByTimers);
+     }
   free(title);
   free(shortText);
   free(description);
@@ -226,15 +230,6 @@ cString cEvent::ToDescr(void) const
   if (Vps())
      sprintf(vpsbuf, "(VPS: %s) ", *GetVpsString());
   return cString::sprintf("%s %s-%s %s'%s'", *GetDateString(), *GetTimeString(), *GetEndTimeString(), vpsbuf, Title());
-}
-
-bool cEvent::HasTimer(void) const
-{
-  for (cTimer *t = Timers.First(); t; t = Timers.Next(t)) {
-      if (t->Event() == this)
-         return true;
-      }
-  return false;
 }
 
 bool cEvent::IsRunning(bool OrAboutToStart) const
@@ -805,33 +800,39 @@ void cSchedule::Sort(void)
          }
      }
 }
-
+//M7X0 BEGIN AK
 void cSchedule::DropOutdated(time_t SegmentStart, time_t SegmentEnd, uchar TableID, uchar Version)
 {
-  if (SegmentStart > 0 && SegmentEnd > 0) {
-     for (cEvent *p = events.First(); p; p = events.Next(p)) {
-         if (p->EndTime() > SegmentStart) {
-            if (p->StartTime() < SegmentEnd) {
-               // The event overlaps with the given time segment.
-               if (p->TableID() > TableID || (p->TableID() == TableID && p->Version() != Version)) {
-                  // The segment overwrites all events from tables with higher ids, and
-                  // within the same table id all events must have the same version.
-                  // We can't delete the event right here because a timer might have
-                  // a pointer to it, so let's set its id and start time to 0 to have it
-                  // "phased out":
-                  if (hasRunning && p->IsRunning())
-                     ClrRunningStatus();
-                  UnhashEvent(p);
-                  p->eventID = 0;
-                  p->startTime = 0;
-                  }
-               }
-            else
-               break;
+  if ((SegmentStart <= 0) | (SegmentEnd <= 0))
+     return;
+
+  cEvent *next_event = NULL;
+  for (cEvent *p = events.First(); p; p = next_event) {
+      next_event = events.Next(p);
+      if (p->EndTime() <= SegmentStart)
+         continue;
+      if (p->StartTime() >= SegmentEnd)
+         break;
+      // The event overlaps with the given time segment.
+      if (p->TableID() > TableID || (p->TableID() == TableID && p->Version() != Version)) {
+         if (!p->HasTimer())
+            DelEvent(p);
+         else {
+            // The segment overwrites all events from tables with higher ids, and
+            // within the same table id all events must have the same version.
+            // We can't delete the event right here because a timer have
+            // a pointer to it, so let's set its id and start time to 0 to have it
+            // "phased out":
+            if (hasRunning && p->IsRunning())
+               ClrRunningStatus();
+            UnhashEvent(p);
+            p->eventID = 0;
+            p->startTime = 0;
             }
          }
      }
 }
+//M7X0 END AK
 
 void cSchedule::Cleanup(void)
 {

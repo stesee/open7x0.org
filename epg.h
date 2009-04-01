@@ -70,6 +70,7 @@ private:
   mutable int cachedDateStringLang;
   mutable cString cachedTimeString;
   mutable cString cachedDateString;
+  mutable int usedByTimers;
 //M7X0 END AK
 public:
   cEvent(tEventID EventID);
@@ -91,7 +92,9 @@ public:
   time_t Vps(void) const { return vps; }
   time_t Seen(void) const { return seen; }
   bool SeenWithin(int Seconds) const { return time(NULL) - seen < Seconds; }
-  bool HasTimer(void) const;
+  bool HasTimer(void) const { return usedByTimers != 0; }
+  void IncTimerUse(void) const { usedByTimers++; }
+  void DecTimerUse(void) const { usedByTimers--; }
   bool IsRunning(bool OrAboutToStart = false) const;
   cString GetDateString(void) const;
   cString GetTimeString(void) const;

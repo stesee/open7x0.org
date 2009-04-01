@@ -93,6 +93,8 @@ cTimer::cTimer(const cTimer &Timer)
 
 cTimer::~cTimer()
 {
+  if (event)
+     event->DecTimerUse();
   free(aux);
 }
 
@@ -519,8 +521,12 @@ void cTimer::SetEventFromSchedule(const cSchedules *Schedules)
 void cTimer::SetEvent(const cEvent *Event)
 {
   if (event != Event) { //XXX TODO check event data, too???
-     if (Event)
+     if (event)
+        event->DecTimerUse();
+     if (Event) {
+        Event->IncTimerUse();
         isyslog("timer %s set to event %s", *ToDescr(), *Event->ToDescr());
+        }
      else
         isyslog("timer %s set to no event", *ToDescr());
      event = Event;
