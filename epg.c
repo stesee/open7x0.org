@@ -325,6 +325,7 @@ bool cEvent::Read(FILE *f, cSchedule *Schedule)
      cEvent *Event = NULL;
      char *s;
      int line = 0;
+     time_t now = time(NULL);
      cReadLine ReadLine;
      while ((s = ReadLine.Read(f)) != NULL) {
            line++;
@@ -339,17 +340,26 @@ bool cEvent::Read(FILE *f, cSchedule *Schedule)
                           int n = sscanf(t, "%u %ld %d %X %X", &EventID, &StartTime, &Duration, &TableID, &Version);
                           if (n >= 3 && n <= 5) {
                              Event = (cEvent *)Schedule->GetEvent(EventID, StartTime);
+                             bool deleted = StartTime + Duration +
+                                            Setup.EPGLinger * 60 + 3600 < now;
                              cEvent *newEvent = NULL;
-                             if (Event)
+                             if (Event) {
                                 DELETENULL(Event->components);
-                             if (!Event) {
+                                if (deleted) {
+                                   Schedule->DelEvent(Event);
+                                   Event = NULL;
+                                   }
+                                }
+                             if ((!Event) & (!deleted)) {
                                 Event = newEvent = new cEvent(EventID);
                                 Event->seen = 0;
                                 }
                              if (Event) {
+                                Event->SetEventID(EventID);
                                 Event->SetTableID(TableID);
                                 Event->SetStartTime(StartTime);
                                 Event->SetDuration(Duration);
+
                                 if (newEvent)
                                    Schedule->AddEvent(newEvent);
                                 }
