@@ -263,6 +263,7 @@ bool cDvbTuner::SetFrontend(void)
                              int n = 0;
                              uchar *codes = diseqc->Codes(n);
                              if ((codes != NULL) & (diseqc_idx < 5)) {
+                                qpsk_Frontend.diseqc[diseqc_idx].diseqc_mode = 1;
                                 qpsk_Frontend.diseqc[diseqc_idx].msg_len =
                                     min(n, int(sizeof(qpsk_Frontend.diseqc[diseqc_idx].msg)));
                                 memcpy(qpsk_Frontend.diseqc[diseqc_idx].msg, codes,
@@ -299,7 +300,7 @@ bool cDvbTuner::SetFrontend(void)
 
          frequency = abs(frequency); // Allow for C-band, where the frequency is less than the LOF
          qpsk_Frontend.frequency = frequency * 1000UL;
-         qpsk_Frontend.symbol_rate = channel.Srate() * 1000UL;
+         qpsk_Frontend.symbol_rate = channel.Srate();
          qpsk_Frontend.fec_inner = FEC_AUTO;
          set_call = FE_SET_QPSK;
          set_arg = &qpsk_Frontend;
