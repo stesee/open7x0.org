@@ -255,6 +255,25 @@ struct dvb_frontend_event {
 #define FE_GET_FRONTEND            _IOR('o', 77, struct dvb_frontend_parameters)
 #define FE_GET_EVENT               _IOR('o', 78, struct dvb_frontend_event)
 
+/* I don't know why Discvision/Siemens invent new
+ * calls but they didn't.
+ */
+
+struct dvb_set_ofdm_parameters {
+	__u32 unknown1;
+	__u32 unknown2;
+	__u32 frequency_khz;
+	__u32 unknown3;
+	__u32 unknown4;
+	__u32 unknown5;
+	__u32 unknown6;
+	__u32 unknown7;
+	__u32 unknown8;
+};
+
+#define FE_SET_OFDM 0x31000009
+
+
 
 #endif /*_DVBFRONTEND_H_*/
 

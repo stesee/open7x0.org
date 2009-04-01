@@ -217,9 +217,14 @@ static unsigned int FrequencyToHz(unsigned int f)
 
 bool cDvbTuner::SetFrontend(void)
 {
+
   dvb_frontend_parameters Frontend;
+  dvb_set_ofdm_parameters ofdm_Frontend;
+  void *set_arg = &Frontend;
+  int set_call = FE_SET_FRONTEND;
 
   memset(&Frontend, 0, sizeof(Frontend));
+  memset(&ofdm_Frontend, 0, sizeof(ofdm_Frontend));
 
   switch (frontendType) {
     case FE_QPSK: { // DVB-S
@@ -323,28 +328,10 @@ bool cDvbTuner::SetFrontend(void)
     case FE_OFDM: { // DVB-T
 
          // Frequency and OFDM paramaters:
+         set_call = FE_SET_OFDM;
+         set_arg = &ofdm_Frontend;
+         ofdm_Frontend.frequency_khz = FrequencyToHz(channel.Frequency())/1000;
 
-         Frontend.frequency = FrequencyToHz(channel.Frequency());
-
-#ifndef USE_TUNER_AUTOVALUES
-         Frontend.inversion = fe_spectral_inversion_t(channel.Inversion());
-         Frontend.u.ofdm.bandwidth = fe_bandwidth_t(channel.Bandwidth());
-         Frontend.u.ofdm.code_rate_HP = fe_code_rate_t(channel.CoderateH());
-         Frontend.u.ofdm.code_rate_LP = fe_code_rate_t(channel.CoderateL());
-         Frontend.u.ofdm.constellation = fe_modulation_t(channel.Modulation());
-         Frontend.u.ofdm.transmission_mode = fe_transmit_mode_t(channel.Transmission());
-         Frontend.u.ofdm.guard_interval = fe_guard_interval_t(channel.Guard());
-         Frontend.u.ofdm.hierarchy_information = fe_hierarchy_t(channel.Hierarchy());
-#else
-         Frontend.inversion = INVERSION_AUTO;
-         Frontend.u.ofdm.bandwidth = BANDWIDTH_AUTO;
-         Frontend.u.ofdm.code_rate_HP = FEC_AUTO;
-         Frontend.u.ofdm.code_rate_LP = FEC_AUTO;
-         Frontend.u.ofdm.constellation = QAM_AUTO;
-         Frontend.u.ofdm.transmission_mode = TRANSMISSION_MODE_AUTO;
-         Frontend.u.ofdm.guard_interval = GUARD_INTERVAL_AUTO;
-         Frontend.u.ofdm.hierarchy_information = HIERARCHY_AUTO;
-#endif
          tuneTimeout = DVBT_TUNE_TIMEOUT;
          lockTimeout = DVBT_LOCK_TIMEOUT;
          }
@@ -355,7 +342,7 @@ bool cDvbTuner::SetFrontend(void)
     }
 
   do {
-     if (ioctl(fd_frontend, FE_SET_FRONTEND, &Frontend) == 0)
+     if (ioctl(fd_frontend, set_call, set_arg) == 0)
         return true;
 
      if (errno != EINTR && errno != EBUSY) {
