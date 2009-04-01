@@ -857,6 +857,7 @@ int main(int argc, char *argv[])
            static time_t LastTimerCheck = 0;
            if (Now - LastTimerCheck > TIMERCHECKDELTA) { // don't do this too often
               InhibitEpgScan = false;
+              bool devNeed = false;
               static time_t DeviceUsed[MAXDEVICES] = { 0 };
               for (cTimer *Timer = Timers.First(); Timer; Timer = Timers.Next(Timer)) {
                   bool InVpsMargin = false;
@@ -914,6 +915,7 @@ int main(int argc, char *argv[])
                         }
                      // Switch the device to the transponder:
                      if (Device) {
+                        devNeed = true;
                         if (!Device->IsTunedToTransponder(Timer->Channel())) {
                            if (Device == cDevice::ActualDevice() && !Device->IsPrimaryDevice())
                               cDevice::PrimaryDevice()->StopReplay(); // stop transfer mode
@@ -929,6 +931,10 @@ int main(int argc, char *argv[])
                         }
                      }
                   }
+              /* Allow epgscan if we have not up to date event, but no dev
+               * is tuned to timers channel.
+               */
+              InhibitEpgScan = (!!InhibitEpgScan) & devNeed;
               LastTimerCheck = time(NULL);
               }
            // Delete expired timers:
